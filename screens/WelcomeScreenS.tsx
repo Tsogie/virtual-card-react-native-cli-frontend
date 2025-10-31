@@ -1,4 +1,4 @@
-// // screens/WelcomeScreen.tsx
+
 // import React, { useState } from 'react';
 // import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 // import { NativeStackNavigationProp } from '@react-navigation/native-stack';

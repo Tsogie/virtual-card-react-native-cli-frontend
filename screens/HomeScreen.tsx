@@ -4,6 +4,8 @@ import { Dimensions } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../App';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -22,7 +24,7 @@ export default function HomeScreen({ navigation, route }: Props) {
   const [userInfo, setUserInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserInfo = async () => {
+  const fetchUserInfo = useCallback(async () => {
     try {
       const response = await fetch('http://172.20.10.13:3000/api/userinfo', {
         method: 'GET',
@@ -32,10 +34,7 @@ export default function HomeScreen({ navigation, route }: Props) {
         },
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch user info');
-      }
-
+      if (!response.ok) throw new Error('Failed to fetch user info');
       const data = await response.json();
       setUserInfo(data);
     } catch (error) {
@@ -43,11 +42,17 @@ export default function HomeScreen({ navigation, route }: Props) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserInfo(); // refresh balance when Home becomes active again
+    }, [fetchUserInfo])
+  );
 
   useEffect(() => {
-    fetchUserInfo();
-  }, [token]);
+    fetchUserInfo(); // also run on first mount
+  }, [fetchUserInfo]);
 
 
   const handleTopUp = async () => {
@@ -71,8 +76,8 @@ export default function HomeScreen({ navigation, route }: Props) {
       throw new Error('Top-up failed');
     }
 
-    const resultText = await response.text(); // backend sends plain text confirmation
-    Alert.alert('✅ Success', resultText); // show confirmation
+    const resultText = await response.text(); 
+    Alert.alert('✅ Success', resultText); 
 
     fetchUserInfo(); // refresh balance
   } catch (error) {
@@ -108,7 +113,7 @@ export default function HomeScreen({ navigation, route }: Props) {
 
       <TouchableOpacity
         style={styles.nfcButton}
-        onPress={() => navigation.navigate('Nfc')}
+        onPress={() => navigation.navigate('Nfc', {cardId: userInfo.cardId})}
         >
         <Text style={styles.buttonText}>Go to NFC</Text>
         </TouchableOpacity>

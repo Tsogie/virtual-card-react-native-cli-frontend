@@ -12,7 +12,7 @@ type Props = {
   navigation: SignUpScreenNavigationProp;
 };
 
-export default function SignupScreen({ navigation }: Props) {  // <- add navigation
+export default function SignupScreen({ navigation }: Props) { 
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const API_URL = 'http://172.20.10.13:3000/api';

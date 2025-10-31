@@ -15,7 +15,7 @@ export type RootStackParamList = {
   SignUp: undefined;
   Login: undefined;
   Home: { token: string };  
-  Nfc: undefined; 
+  Nfc: { cardId: string }; 
 };
 
 // Create the stack navigator

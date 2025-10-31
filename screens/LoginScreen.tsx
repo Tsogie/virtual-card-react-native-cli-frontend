@@ -40,12 +40,12 @@ export default function LoginScreen({ navigation }: Props) {
           body: username,
       });
 
-      const textResponse = await response.text(); // backend returns plain text
+      const textResponse = await response.text(); 
 
       if (response.ok) {
         console.log('JWT Token:', textResponse);
         //Alert.alert('Login Success', `JWT Token:\n${textResponse}`);
-        // You can store the token for future requests:
+        
         // await AsyncStorage.setItem('token', textResponse);
         // navigation.navigate('Welcome');
         navigation.navigate('Home', { token: textResponse });
@@ -107,30 +107,9 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
     marginBottom: 20,
   },
-//   input: {
-//     width: '80%',
-//     backgroundColor: '#fff',
-//     borderColor: '#ccc',
-//     borderWidth: 1,
-//     borderRadius: 8,
-//     padding: 10,
-//     marginBottom: 20,
-//     fontSize: 16,
-//   },
+
   input: { width: '100%', borderWidth: 1, borderColor: '#4CAF50', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16, color: '#000', backgroundColor: 'transparent' },
 
-//   button: {
-//     backgroundColor: '#66BB6A',
-//     paddingVertical: 12,
-//     paddingHorizontal: 24,
-//     borderRadius: 8,
-//     marginBottom: 16
-//   },
-//   buttonText: {
-//     color: '#fff',
-//     fontSize: 16,
-//     fontWeight: '600',
-//   },
   signUpLink: { fontSize: 16, color: '#2E7D32' },
   signUpText: { fontWeight: 'bold', textDecorationLine: 'underline' },
   button: { width: '100%', backgroundColor: '#66BB6A', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 16 },
