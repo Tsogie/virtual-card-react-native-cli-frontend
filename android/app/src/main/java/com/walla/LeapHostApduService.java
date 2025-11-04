@@ -5,6 +5,9 @@ import android.nfc.cardemulation.HostApduService;
 import android.os.Bundle;
 import android.util.Log;
 
+import com.walla.NFCModule;
+
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -70,9 +73,18 @@ public class LeapHostApduService extends HostApduService {
                 }
 
                 // Run backend call asynchronously
+                //result != null && 
                 new Thread(() -> {
                     String result = redeemFareToBackend(jwt, fare);
                     Log.i(TAG, "Backend responded: " + result);
+                    // Determine status
+                       if (result != null && result.contains("Success")) {
+                            NFCModule.sendEventToJS("success", "Fare deducted successfully");
+                        } else if (result.contains("Invalid")) {
+                            NFCModule.sendEventToJS("failure", "Invalid token or expired session");
+                        } else {
+                            NFCModule.sendEventToJS("failure", result);
+                        }
                 }).start();
 
                 // Respond to reader immediately

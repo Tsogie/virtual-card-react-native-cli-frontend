@@ -6,6 +6,7 @@ import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../App';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback } from 'react';
+import Nfc from './Nfc';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -79,7 +80,7 @@ export default function HomeScreen({ navigation, route }: Props) {
     const resultText = await response.text(); 
     Alert.alert('✅ Success', resultText); 
 
-    fetchUserInfo(); // refresh balance
+    fetchUserInfo(); 
   } catch (error) {
     console.error('Error topping up:', error);
     Alert.alert('Error', 'Failed to top up your balance.');
@@ -111,12 +112,17 @@ export default function HomeScreen({ navigation, route }: Props) {
         )}
       </View>
 
-      <TouchableOpacity
+
+      <Nfc
+       
+        cardId={userInfo.cardId}
+      />
+      {/* <TouchableOpacity
         style={styles.nfcButton}
         onPress={() => navigation.navigate('Nfc', {cardId: userInfo.cardId})}
         >
         <Text style={styles.buttonText}>Go to NFC</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.topUpButton} onPress={handleTopUp}>

@@ -7,7 +7,7 @@ import WelcomeScreen from './screens/WelcomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import Sign from './screens/Sign';
 import HomeScreen from './screens/HomeScreen';
-import NfcScreen from './screens/NfcScreen';
+//import NfcScreen from './screens/NfcScreen';
 
 // Define the routes and params (none for now)
 export type RootStackParamList = {
@@ -15,7 +15,7 @@ export type RootStackParamList = {
   Sign: undefined;
   Login: undefined;
   Home: { token: string };  
-  Nfc: { cardId: string }; 
+  
 };
 
 // Create the stack navigator
@@ -29,7 +29,7 @@ export default function App() {
         <Stack.Screen name="Sign" component={Sign} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="Nfc" component={NfcScreen} />
+        
         
       </Stack.Navigator>
     </NavigationContainer>
