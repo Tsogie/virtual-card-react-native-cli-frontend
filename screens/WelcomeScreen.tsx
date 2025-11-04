@@ -19,7 +19,7 @@ export default function WelcomeScreen({ navigation }: Props) {
 
       <TouchableOpacity
         style={styles.button}
-        onPress={() => navigation.navigate('SignUp')}
+        onPress={() => navigation.navigate('Sign')}
       >
         <Text style={styles.buttonText}>Sign Up</Text>
       </TouchableOpacity>
@@ -36,7 +36,7 @@ export default function WelcomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#F1F8F3' },
   title: { fontSize: 28, fontWeight: 'bold', marginBottom: 32, color: '#2E7D32', textAlign: 'center' },
-  button: { width: '100%', backgroundColor: '#66BB6A', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 16 },
+  button: { width: '100%', backgroundColor: '#018651', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 16 },
   buttonText: { color: '#fff', fontSize: 18, fontWeight: '600' },
   loginLink: { fontSize: 16, color: '#2E7D32' },
   loginText: { fontWeight: 'bold', textDecorationLine: 'underline' },

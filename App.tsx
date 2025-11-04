@@ -5,14 +5,14 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import WelcomeScreen from './screens/WelcomeScreen';
 import LoginScreen from './screens/LoginScreen';
-import SignupScreen from './screens/SignupScreen';
+import Sign from './screens/Sign';
 import HomeScreen from './screens/HomeScreen';
 import NfcScreen from './screens/NfcScreen';
 
 // Define the routes and params (none for now)
 export type RootStackParamList = {
   Welcome: undefined;
-  SignUp: undefined;
+  Sign: undefined;
   Login: undefined;
   Home: { token: string };  
   Nfc: { cardId: string }; 
@@ -26,7 +26,7 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator initialRouteName="Welcome" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Welcome" component={WelcomeScreen} />
-        <Stack.Screen name="SignUp" component={SignupScreen} />
+        <Stack.Screen name="Sign" component={Sign} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Nfc" component={NfcScreen} />

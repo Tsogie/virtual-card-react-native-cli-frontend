@@ -142,4 +142,9 @@ public class LeapHostApduService extends HostApduService {
         }
         return sb.toString();
     }
+
+//     JSONArray offlineTxs = prefs.getJSONArray("offline_tx");
+// offlineTxs.put({jwt, fare, timestamp});
+// syncLater();
+
 }

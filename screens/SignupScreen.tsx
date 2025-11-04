@@ -5,7 +5,7 @@ import { RootStackParamList } from '../App';
 
 type SignUpScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
-  'SignUp'
+  'Sign'
 >;
 
 type Props = {
