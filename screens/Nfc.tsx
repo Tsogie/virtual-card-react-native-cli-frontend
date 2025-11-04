@@ -89,7 +89,7 @@ export default function Nfc({ cardId }: Props) {
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>Refresh Token 🔄</Text>
+          <Text style={styles.buttonText}>Refresh Token</Text>
         )}
       </TouchableOpacity>
 
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     padding: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F1F8F3',
+    backgroundColor: '#E8F5E9',
     borderRadius: 12,
     marginTop: 16,
   },

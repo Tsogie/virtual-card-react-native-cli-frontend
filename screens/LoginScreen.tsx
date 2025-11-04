@@ -48,7 +48,8 @@ export default function LoginScreen({ navigation }: Props) {
         
         // await AsyncStorage.setItem('token', textResponse);
         // navigation.navigate('Welcome');
-        navigation.navigate('Home', { token: textResponse });
+        //navigation.navigate('Home', { token: textResponse });
+        navigation.replace('Main', {token: textResponse });
 
       } else {
         Alert.alert('Login Failed', textResponse || 'User not found');
