@@ -17,10 +17,6 @@ public class NFCModule extends ReactContextBaseJavaModule {
     private SharedPreferences prefs;
     private static ReactApplicationContext reactContext;
 
-    // public NFCModule(ReactApplicationContext reactContext) {
-    //     super(reactContext);
-    //     prefs = reactContext.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
-    // }
 
     public NFCModule(ReactApplicationContext context) {
     super(context);
@@ -64,17 +60,40 @@ public class NFCModule extends ReactContextBaseJavaModule {
         }
     }
 
-    public void addListener(String eventName) {
-        
-        if (eventName.equals("NfcEvent")) {
-           
+    //Save balance to sharedRef
+    @ReactMethod
+    public void saveLocalBalance(double balance, Promise promise) {
+        try {
+            // Store as long bits
+            prefs.edit().putLong("local_balance", Double.doubleToRawLongBits(balance)).apply();
+            promise.resolve(true);
+        } catch (Exception e) {
+            promise.reject("SAVE_BALANCE_FAILED", e);
         }
     }
 
-  
-    public void removeListeners(int count) {
-        
+
+   @ReactMethod
+    public void getLocalBalance(Promise promise) {
+    try {
+        long bits = prefs.getLong("local_balance", Double.doubleToRawLongBits(0.0));
+        double balance = Double.longBitsToDouble(bits);
+        promise.resolve(balance);
+    } catch (Exception e) {
+        promise.reject("GET_BALANCE_FAILED", e);
+    }
     }
 
 
+   @ReactMethod
+    public void addListener(String eventName) {
+        // Required for RN built-in EventEmitter.
+        // No implementation needed — RN calls this when JS adds a listener.
+    }
+
+    @ReactMethod
+    public void removeListeners(Integer count) {
+        // Required for RN built-in EventEmitter.
+        // No implementation needed — RN calls this when JS removes listeners.
+    }
 }

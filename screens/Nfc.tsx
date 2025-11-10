@@ -15,6 +15,17 @@ export default function Nfc({ cardId }: Props) {
   const [token, setToken] = useState<string | null>(null);
   const [tokenValid, setTokenValid] = useState(false);
 
+  //adding expiration 
+//   useEffect(() => {
+//   if (tokenValid) {
+//     const timer = setTimeout(() => {
+//       setTokenValid(false);
+//       setStatus('Token expired – please refresh 🔁');
+//     }, 60000); // expires in 1 minute for demo
+//     return () => clearTimeout(timer);
+//   }
+// }, [tokenValid]);
+
  useEffect(() => {
   const eventEmitter = new NativeEventEmitter(NFCModule);
   const subscription = eventEmitter.addListener('NfcEvent', (event) => {

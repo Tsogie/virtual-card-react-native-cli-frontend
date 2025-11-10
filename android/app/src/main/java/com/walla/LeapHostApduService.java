@@ -1,5 +1,6 @@
 package com.walla;
 
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.nfc.cardemulation.HostApduService;
 import android.os.Bundle;
@@ -7,7 +8,7 @@ import android.util.Log;
 
 import com.walla.NFCModule;
 
-
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -24,15 +25,8 @@ import okhttp3.Response;
 public class LeapHostApduService extends HostApduService {
     private static final String TAG = "LeapHCE";
 
-    // ISO-7816 Status words
     private static final byte[] SW_OK = new byte[]{(byte) 0x90, (byte) 0x00};
     private static final byte[] SW_FAIL = new byte[]{(byte) 0x69, (byte) 0x85};
-
-    // Example AID (must match your res/xml/apduservice.xml)
-    private static final byte[] TEST_AID = new byte[]{
-            (byte) 0xF0, (byte) 0x01, (byte) 0x02,
-            (byte) 0x03, (byte) 0x04, (byte) 0x05, (byte) 0x06
-    };
 
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .connectTimeout(1500, TimeUnit.MILLISECONDS)
@@ -42,56 +36,55 @@ public class LeapHostApduService extends HostApduService {
     @Override
     public byte[] processCommandApdu(byte[] commandApdu, Bundle extras) {
         if (commandApdu == null) return SW_FAIL;
-        Log.i(TAG, "Incoming APDU: " + bytesToHex(commandApdu));
+
+        Log.i(TAG, "[LOG] Incoming APDU: " + bytesToHex(commandApdu));
 
         // ---- SELECT AID ----
         if (isSelectAid(commandApdu)) {
-            Log.i(TAG, "SELECT AID received");
+            Log.i(TAG, "[LOG] SELECT AID received");
             return concat("LEAP_OK".getBytes(), SW_OK);
         }
 
-        // ---- DEDUCT FARE (CLA=0x80, INS=0x10) ----
-        if (commandApdu.length >= 9 &&
-                commandApdu[0] == (byte) 0x80 &&
-                commandApdu[1] == (byte) 0x10) {
-
+        // ---- DEDUCT FARE ----
+        if (commandApdu.length >= 9 && commandApdu[0] == (byte) 0x80 && commandApdu[1] == (byte) 0x10) {
             try {
                 int lc = commandApdu[4] & 0xFF;
                 byte[] data = new byte[lc];
                 System.arraycopy(commandApdu, 5, data, 0, lc);
-
                 int fare = ByteBuffer.wrap(data).getInt();
-                Log.i(TAG, "DEDUCT fare=" + fare);
 
                 SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
                 String jwt = prefs.getString("jwt_token", null);
+                double localBalance = Double.longBitsToDouble(
+                    prefs.getLong("local_balance", Double.doubleToRawLongBits(0.0))
+                );
 
-                Log.i(TAG, "Stored JWT: " + jwt);
                 if (jwt == null) {
-                    Log.w(TAG, "No JWT token stored");
+                    Log.w(TAG, "[LOG] No JWT token found");
                     return SW_FAIL;
                 }
 
-                // Run backend call asynchronously
-                //result != null && 
-                new Thread(() -> {
-                    String result = redeemFareToBackend(jwt, fare);
-                    Log.i(TAG, "Backend responded: " + result);
-                    // Determine status
-                       if (result != null && result.contains("Success")) {
-                            NFCModule.sendEventToJS("success", "Fare deducted successfully");
-                        } else if (result.contains("Invalid")) {
-                            NFCModule.sendEventToJS("failure", "Invalid token or expired session");
-                        } else {
-                            NFCModule.sendEventToJS("failure", result);
-                        }
-                }).start();
+                Log.i(TAG, "[LOG] Fare=" + fare + ", Local balance=" + localBalance);
 
-                // Respond to reader immediately
+                // Check balance locally
+                if (localBalance < fare) {
+                    Log.w(TAG, "[LOG] Insufficient local balance");
+                    NFCModule.sendEventToJS("failure", "Insufficient local balance");
+                    return SW_FAIL;
+                }
+
+                // Deduct locally and respond immediately
+                double newLocalBalance = localBalance - fare;
+                prefs.edit().putLong("local_balance", Double.doubleToLongBits(newLocalBalance)).apply();
+                Log.i(TAG, "[LOG] Deducted locally. New local balance=" + newLocalBalance);
+                NFCModule.sendEventToJS("balanceUpdate", String.valueOf(newLocalBalance));
+
+                // Return OK to reader first
+                new Thread(() -> syncWithBackend(jwt, fare, newLocalBalance)).start();
                 return SW_OK;
 
             } catch (Exception e) {
-                Log.e(TAG, "Error processing DEDUCT APDU", e);
+                Log.e(TAG, "[ERROR] DEDUCT APDU failed", e);
                 return SW_FAIL;
             }
         }
@@ -99,33 +92,70 @@ public class LeapHostApduService extends HostApduService {
         return SW_FAIL;
     }
 
-    @Override
-    public void onDeactivated(int reason) {
-        Log.i(TAG, "HCE deactivated, reason=" + reason);
+    /** Try backend sync, or queue locally if offline */
+    private void syncWithBackend(String jwt, int fare, double currentBalance) {
+        try {
+            String result = redeemFareToBackend(jwt, fare);
+            if (result == null) {
+                Log.w(TAG, "[LOG] Backend unreachable. Queuing transaction.");
+                queueTransactionLocally(jwt, fare);
+                return;
+            }
+
+            JSONObject json = new JSONObject(result);
+            String status = json.optString("status", "");
+            double newBalance = json.optDouble("newBalance", currentBalance);
+
+            if ("Success".equals(status)) {
+                SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+                prefs.edit().putLong("local_balance", Double.doubleToLongBits(newBalance)).apply();
+                NFCModule.sendEventToJS("success", "Fare deducted successfully");
+                NFCModule.sendEventToJS("balanceUpdate", String.valueOf(newBalance));
+                Log.i(TAG, "[LOG] Synced successfully. New backend balance=" + newBalance);
+            } else {
+                Log.w(TAG, "[LOG] Backend responded error: " + status);
+                NFCModule.sendEventToJS("failure", status);
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "[ERROR] Sync failed", e);
+            queueTransactionLocally(jwt, fare);
+        }
     }
 
-    private boolean isSelectAid(byte[] apdu) {
-        if (apdu.length < 4) return false;
-        return (apdu[0] == (byte) 0x00 && apdu[1] == (byte) 0xA4 &&
-                apdu[2] == (byte) 0x04 && apdu[3] == (byte) 0x00);
+    /** Queue the transaction to SharedPreferences for retry later */
+    private void queueTransactionLocally(String jwt, int fare) {
+        try {
+            SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+            String existingQueue = prefs.getString("offline_queue", "[]");
+            JSONArray queue = new JSONArray(existingQueue);
+
+            JSONObject tx = new JSONObject();
+            tx.put("token", jwt);
+            tx.put("fare", fare);
+            tx.put("timestamp", System.currentTimeMillis());
+
+            queue.put(tx);
+            prefs.edit().putString("offline_queue", queue.toString()).apply();
+
+            Log.i(TAG, "[LOG] Queued offline transaction (fare=" + fare + ")");
+            NFCModule.sendEventToJS("queued", "Transaction queued for later sync");
+        } catch (JSONException e) {
+            Log.e(TAG, "[ERROR] Failed to queue offline transaction", e);
+        }
     }
 
-    // ---- Call backend redeem endpoint ----
     private String redeemFareToBackend(String jwt, int fare) {
         JSONObject json = new JSONObject();
         try {
             json.put("token", jwt);
             json.put("fare", fare);
         } catch (JSONException e) {
-            Log.e(TAG, "JSON error", e);
+            Log.e(TAG, "[ERROR] JSON error", e);
             return null;
         }
 
-        RequestBody body = RequestBody.create(
-                json.toString(),
-                MediaType.parse("application/json")
-        );
-
+        RequestBody body = RequestBody.create(json.toString(), MediaType.parse("application/json"));
         Request request = new Request.Builder()
                 .url("http://172.20.10.13:3000/api/wallet/redeem")
                 .post(body)
@@ -134,12 +164,23 @@ public class LeapHostApduService extends HostApduService {
         try (Response response = httpClient.newCall(request).execute()) {
             return response.isSuccessful() ? response.body().string() : null;
         } catch (IOException e) {
-            Log.e(TAG, "Network error", e);
+            Log.e(TAG, "[ERROR] Network error", e);
             return null;
         }
+
     }
 
-    // ---- Helper: concatenate byte arrays ----
+    @Override
+    public void onDeactivated(int reason) {
+        Log.i(TAG, "[LOG] HCE deactivated, reason=" + reason);
+    }
+
+    private boolean isSelectAid(byte[] apdu) {
+        if (apdu.length < 4) return false;
+        return apdu[0] == (byte) 0x00 && apdu[1] == (byte) 0xA4 &&
+               apdu[2] == (byte) 0x04 && apdu[3] == (byte) 0x00;
+    }
+
     private byte[] concat(byte[] a, byte[] b) {
         byte[] result = new byte[a.length + b.length];
         System.arraycopy(a, 0, result, 0, a.length);
@@ -149,14 +190,13 @@ public class LeapHostApduService extends HostApduService {
 
     private String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) {
-            sb.append(String.format("%02X", b));
-        }
+        for (byte b : bytes) sb.append(String.format("%02X", b));
         return sb.toString();
     }
 
-//     JSONArray offlineTxs = prefs.getJSONArray("offline_tx");
-// offlineTxs.put({jwt, fare, timestamp});
-// syncLater();
-
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        Log.i(TAG, "[LOG] HCE Service started or restarted");
+        return START_STICKY;
+    }
 }

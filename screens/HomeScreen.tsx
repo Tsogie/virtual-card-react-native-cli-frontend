@@ -7,7 +7,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useCallback } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Nfc from './Nfc';
+import { NativeEventEmitter, NativeModules } from 'react-native';
 
+const { NFCModule } = NativeModules;
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 type HomeScreenRouteProp = RouteProp<RootStackParamList, 'Main'>;
@@ -21,6 +23,21 @@ export default function HomeScreen() {
   const { token } = route.params;
   const [userInfo, setUserInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const nfcEventEmitter = new NativeEventEmitter(NFCModule);
+
+  useEffect(() => {
+  const subscription = nfcEventEmitter.addListener('NfcEvent', (event) => {
+    if (event.type === 'balanceUpdate') {
+      setUserInfo((prev: any) => ({
+        ...prev,
+        balance: parseFloat(event.message),
+      }));
+      console.log('[LOG] Balance updated to:', event.message);
+    }
+  });
+
+  return () => subscription.remove();
+  }, []);
 
   const fetchUserInfo = useCallback(async () => {
     try {
@@ -33,8 +50,21 @@ export default function HomeScreen() {
       });
 
       if (!response.ok) throw new Error('Failed to fetch user info');
+
+      //Saving user data to userInfo state
       const data = await response.json();
       setUserInfo(data);
+
+      // Save local balance for offline mode
+      if (data && typeof data.balance === 'number') {
+        try {
+          await NFCModule.saveLocalBalance(data.balance);
+          console.log('[LOG] Local balance saved:', data.balance);
+        } catch (e) {
+          console.error('Failed to save local balance', e);
+        }
+      }
+
     } catch (error) {
       console.error('Error fetching user info:', error);
     } finally {
@@ -63,8 +93,6 @@ export default function HomeScreen() {
     );
   }
 
-
-
   return (
   <View style={styles.container}>
     <View style={styles.centerContent}>
@@ -74,12 +102,11 @@ export default function HomeScreen() {
       </View>
 
       <Nfc cardId={userInfo.cardId} />
+    
     </View>
   </View>
 );
 }
-
-
 
 //const { height, width } = Dimensions.get('window');
 

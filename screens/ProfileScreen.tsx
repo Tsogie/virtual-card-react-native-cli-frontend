@@ -43,12 +43,12 @@ export default function ProfileScreen(){
   
     useFocusEffect(
       useCallback(() => {
-        fetchUserInfo(); // refresh balance when Home becomes active again
+        fetchUserInfo(); 
       }, [fetchUserInfo])
     );
   
     useEffect(() => {
-      fetchUserInfo(); // also run on first mount
+      fetchUserInfo(); 
     }, [fetchUserInfo]);
   
   
