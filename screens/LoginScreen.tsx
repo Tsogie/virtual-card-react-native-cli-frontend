@@ -8,6 +8,7 @@ import {
   Alert 
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import EncryptedStorage from 'react-native-encrypted-storage';
 import { RootStackParamList } from '../App';
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<
@@ -43,13 +44,28 @@ export default function LoginScreen({ navigation }: Props) {
       const textResponse = await response.text(); 
 
       if (response.ok) {
+        let deviceKey = await EncryptedStorage.getItem('device_key');
+
+        if (!deviceKey) {
+          const registerRes = await fetch('http://172.20.10.13:3000/api/device/register', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${textResponse}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          const data = await registerRes.json();
+
+          // Type assertion: we trust that data.deviceKey exists and is a string
+          deviceKey = data.deviceKey as string;
+
+          // Now TypeScript knows deviceKey is string
+          await EncryptedStorage.setItem('device_key', deviceKey);
+        }
+
+        console.log('Device key:', deviceKey);
         console.log('JWT Token:', textResponse);
-        //Alert.alert('Login Success', `JWT Token:\n${textResponse}`);
-        
-        // await AsyncStorage.setItem('token', textResponse);
-        // navigation.navigate('Welcome');
-        //navigation.navigate('Home', { token: textResponse });
-        navigation.replace('Main', {token: textResponse });
+        navigation.replace('Main', {token: textResponse, deviceKey: deviceKey });
 
       } else {
         Alert.alert('Login Failed', textResponse || 'User not found');

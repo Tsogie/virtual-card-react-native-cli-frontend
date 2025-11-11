@@ -1,92 +1,61 @@
-import React, { useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  Dimensions,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
-import { RouteProp, useFocusEffect, useRoute } from '@react-navigation/native';
-import { RootStackParamList } from '../App';
+import React, { useContext, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Dimensions } from 'react-native';
+// import { RouteProp, useRoute } from '@react-navigation/native';
+// import { RootStackParamList } from '../App';
+import { UserContext } from '../context/UserContext';
 import { NativeModules } from 'react-native';
 
 const { NFCModule } = NativeModules;
-const { height, width } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-type TopUpScreenRouteProp = RouteProp<RootStackParamList, 'TopUp'>;
+//type TopUpScreenRouteProp = RouteProp<RootStackParamList, 'TopUp'>;
 
 export default function TopUpScreen() {
-  const route = useRoute<TopUpScreenRouteProp>();
-  const { token } = route.params;
 
-  const [userInfo, setUserInfo] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  //const route = useRoute<TopUpScreenRouteProp>();
+  //const { token } = route.params;
 
-  // Fetch user info
-  const fetchUserInfo = useCallback(async () => {
-    try {
-      const response = await fetch('http://172.20.10.13:3000/api/userinfo', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch user info');
-      const data = await response.json();
-      setUserInfo(data);
-
-      // Save local balance for offline mode
-      if (typeof data.balance === 'number') {
-        await NFCModule.saveLocalBalance(data.balance);
-        console.log('[LOG] Local balance saved:', data.balance);
-      }
-    } catch (error) {
-      console.error('Error fetching user info:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  // Refresh on focus
-  useFocusEffect(
-    useCallback(() => {
-      fetchUserInfo();
-    }, [fetchUserInfo])
-  );
+  const { user, setUser } = useContext(UserContext)!; // Non-null assertion
+  const [loading, setLoading] = useState(false);
 
   const handleTopUp = async () => {
-    if (!userInfo?.cardId) {
+    if (!user?.cardId) {
       Alert.alert('Error', 'Card ID not found.');
       return;
     }
 
+    setLoading(true);
     try {
+      // Send top-up request
       const response = await fetch(
-        `http://172.20.10.13:3000/api/wallet/topup/${userInfo.cardId}`,
+        `http://172.20.10.13:3000/api/wallet/topup/${user.cardId}`,
         {
           method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          
         }
       );
 
       if (!response.ok) throw new Error('Top-up failed');
 
-      const resultText = await response.text();
-      Alert.alert('✅ Success', resultText);
-      fetchUserInfo(); // Refresh balance
+      const result = await response.json(); // <-- JSON object now
+      if (result.success) {
+        Alert.alert('✅ Success', `Top-up successful! New balance: €${result.balance}`);
+
+        // Update balance in context and local NFC storage
+        setUser(prev => prev ? { ...prev, balance: result.balance } : prev);
+        await NFCModule.saveLocalBalance(result.balance);
+      } else {
+        Alert.alert('Error', 'Top-up failed on backend.');
+      }
     } catch (error) {
-      console.error('Error topping up:', error);
+      console.error(error);
       Alert.alert('Error', 'Failed to top up your balance.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (loading) {
+  if (!user) {
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#2E7D32" />
@@ -99,25 +68,33 @@ export default function TopUpScreen() {
     <View style={styles.container}>
       <Text style={styles.header}>Top Up</Text>
 
-      {/* Card Detail Box */}
       <View style={styles.cardBox}>
-        <Text style={styles.cardHolder}>{userInfo.username}</Text>
-        <Text style={styles.cardDetail}>Card ID: {userInfo.cardId}</Text>
+        <Text style={styles.cardHolder}>{user.username}</Text>
+        <Text style={styles.cardDetail}>Card ID: {user.cardId}</Text>
         <Text style={styles.cardDetail}>Card Type: Student</Text>
         <Text style={styles.cardDetail}>Valid Until: 31 Aug 2026</Text>
       </View>
 
       <View style={styles.balanceBox}>
         <Text style={styles.balanceLabel}>Current Balance</Text>
-        <Text style={styles.balanceValue}>€{userInfo.balance}</Text>
+        <Text style={styles.balanceValue}>€{user.balance}</Text>
       </View>
 
-      <TouchableOpacity style={styles.topUpButton} onPress={handleTopUp}>
-        <Text style={styles.buttonText}>Top Up</Text>
+      <TouchableOpacity
+        style={styles.topUpButton}
+        onPress={handleTopUp}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Top Up</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {

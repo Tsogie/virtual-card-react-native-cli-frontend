@@ -16,6 +16,9 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.TimeUnit;
 
+import android.os.Handler;
+import android.os.Looper;
+
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -54,13 +57,13 @@ public class LeapHostApduService extends HostApduService {
                 int fare = ByteBuffer.wrap(data).getInt();
 
                 SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-                String jwt = prefs.getString("jwt_token", null);
+                String deviceKey = prefs.getString("device_key", null);
                 double localBalance = Double.longBitsToDouble(
                     prefs.getLong("local_balance", Double.doubleToRawLongBits(0.0))
                 );
 
-                if (jwt == null) {
-                    Log.w(TAG, "[LOG] No JWT token found");
+                if (deviceKey == null) {
+                    Log.w(TAG, "[LOG] No device key found");
                     return SW_FAIL;
                 }
 
@@ -80,7 +83,7 @@ public class LeapHostApduService extends HostApduService {
                 NFCModule.sendEventToJS("balanceUpdate", String.valueOf(newLocalBalance));
 
                 // Return OK to reader first
-                new Thread(() -> syncWithBackend(jwt, fare, newLocalBalance)).start();
+                new Thread(() -> syncWithBackend(deviceKey, fare, newLocalBalance)).start();
                 return SW_OK;
 
             } catch (Exception e) {
@@ -93,24 +96,29 @@ public class LeapHostApduService extends HostApduService {
     }
 
     /** Try backend sync, or queue locally if offline */
-    private void syncWithBackend(String jwt, int fare, double currentBalance) {
+    private void syncWithBackend(String deviceKey, int fare, double currentBalance) {
         try {
-            String result = redeemFareToBackend(jwt, fare);
+            String result = redeemFareToBackend(deviceKey, fare);
             if (result == null) {
                 Log.w(TAG, "[LOG] Backend unreachable. Queuing transaction.");
-                queueTransactionLocally(jwt, fare);
+                queueTransactionLocally(deviceKey, fare);
                 return;
             }
 
             JSONObject json = new JSONObject(result);
             String status = json.optString("status", "");
+            //is here overriding balance from backend?
             double newBalance = json.optDouble("newBalance", currentBalance);
 
             if ("Success".equals(status)) {
                 SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
                 prefs.edit().putLong("local_balance", Double.doubleToLongBits(newBalance)).apply();
-                NFCModule.sendEventToJS("success", "Fare deducted successfully");
                 NFCModule.sendEventToJS("balanceUpdate", String.valueOf(newBalance));
+                // Delay 10–20ms before sending success
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    NFCModule.sendEventToJS("success", "Fare deducted successfully");
+                }, 20);
+                
                 Log.i(TAG, "[LOG] Synced successfully. New backend balance=" + newBalance);
             } else {
                 Log.w(TAG, "[LOG] Backend responded error: " + status);
@@ -119,19 +127,19 @@ public class LeapHostApduService extends HostApduService {
 
         } catch (Exception e) {
             Log.e(TAG, "[ERROR] Sync failed", e);
-            queueTransactionLocally(jwt, fare);
+            queueTransactionLocally(deviceKey, fare);
         }
     }
 
     /** Queue the transaction to SharedPreferences for retry later */
-    private void queueTransactionLocally(String jwt, int fare) {
+    private void queueTransactionLocally(String deviceKey, int fare) {
         try {
             SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
             String existingQueue = prefs.getString("offline_queue", "[]");
             JSONArray queue = new JSONArray(existingQueue);
 
             JSONObject tx = new JSONObject();
-            tx.put("token", jwt);
+            tx.put("deviceKey", deviceKey);
             tx.put("fare", fare);
             tx.put("timestamp", System.currentTimeMillis());
 
@@ -145,10 +153,10 @@ public class LeapHostApduService extends HostApduService {
         }
     }
 
-    private String redeemFareToBackend(String jwt, int fare) {
+    private String redeemFareToBackend(String deviceKey, int fare) {
         JSONObject json = new JSONObject();
         try {
-            json.put("token", jwt);
+            json.put("deviceKey", deviceKey);
             json.put("fare", fare);
         } catch (JSONException e) {
             Log.e(TAG, "[ERROR] JSON error", e);
@@ -157,7 +165,7 @@ public class LeapHostApduService extends HostApduService {
 
         RequestBody body = RequestBody.create(json.toString(), MediaType.parse("application/json"));
         Request request = new Request.Builder()
-                .url("http://172.20.10.13:3000/api/wallet/redeem")
+                .url("http://172.20.10.13:3000/api/wallet/redeem-device")
                 .post(body)
                 .build();
 

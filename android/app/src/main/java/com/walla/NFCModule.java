@@ -60,6 +60,9 @@ public class NFCModule extends ReactContextBaseJavaModule {
         }
     }
 
+    //Add method to clear local balance??
+    
+
     //Save balance to sharedRef
     @ReactMethod
     public void saveLocalBalance(double balance, Promise promise) {
@@ -75,13 +78,23 @@ public class NFCModule extends ReactContextBaseJavaModule {
 
    @ReactMethod
     public void getLocalBalance(Promise promise) {
-    try {
-        long bits = prefs.getLong("local_balance", Double.doubleToRawLongBits(0.0));
-        double balance = Double.longBitsToDouble(bits);
-        promise.resolve(balance);
-    } catch (Exception e) {
-        promise.reject("GET_BALANCE_FAILED", e);
+        try {
+            long bits = prefs.getLong("local_balance", Double.doubleToRawLongBits(0.0));
+            double balance = Double.longBitsToDouble(bits);
+            promise.resolve(balance);
+        } catch (Exception e) {
+            promise.reject("GET_BALANCE_FAILED", e);
+        }
     }
+
+    @ReactMethod
+    public void saveDeviceKey(String deviceKey, Promise promise){
+        try {
+            prefs.edit().putString("device_key", deviceKey).apply();
+            promise.resolve(true);
+        } catch (Exception e) {
+            promise.reject("SAVE_FAILED", e);
+        }
     }
 
 

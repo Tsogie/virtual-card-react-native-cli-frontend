@@ -2,10 +2,31 @@ import React, { useState } from 'react';
 import { View, TouchableOpacity, Text, Modal, StyleSheet } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
+import EncryptedStorage from 'react-native-encrypted-storage';
+import { NativeModules } from 'react-native';
+
+const { NFCModule } = NativeModules;
 
 export default function ProfileMenuButton() {
   const [visible, setVisible] = useState(false);
   const navigation = useNavigation();
+
+  const handleLogout = async (navigation: any) => {
+    try {
+      // Clear device key
+      await EncryptedStorage.removeItem('device_key');
+
+      // Clear local balance in HCE module
+      await NFCModule.saveLocalBalance(0);
+
+      // Navigate to login screen
+      navigation.replace('Login');
+
+      console.log('User logged out successfully');
+    } catch (error) {
+      console.error('Logout failed', error);
+    }
+  };
 
   return (
     <View>
@@ -41,15 +62,16 @@ export default function ProfileMenuButton() {
               <Text style={styles.text}>Card Details</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setVisible(false);
-                navigation.navigate('Welcome' as never); // or logout handler
-              }}
-            >
-              <Text style={[styles.text, { color: 'red' }]}>Logout</Text>
-            </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={async () => {
+              setVisible(false);
+              await handleLogout(navigation);
+            }}
+          >
+            <Text style={[styles.text, { color: 'red' }]}>Logout</Text>
+          </TouchableOpacity>
+
           </View>
         </TouchableOpacity>
       </Modal>

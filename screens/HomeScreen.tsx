@@ -1,18 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../App';
-import { useFocusEffect } from '@react-navigation/native';
-import { useCallback } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import Nfc from './Nfc';
+import Nfc from './NfcOld';
 import { NativeEventEmitter, NativeModules } from 'react-native';
-
+import { UserContext } from '../context/UserContext';
 const { NFCModule } = NativeModules;
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 type HomeScreenRouteProp = RouteProp<RootStackParamList, 'Main'>;
+const nfcEventEmitter = new NativeEventEmitter(NFCModule);
 
 
 export default function HomeScreen() {
@@ -20,67 +19,69 @@ export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const route = useRoute<HomeScreenRouteProp>();
 
-  const { token } = route.params;
-  const [userInfo, setUserInfo] = useState<any>(null);
+  const { token, deviceKey } = route.params;
+
+  //const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  //const [userInfo, setUserInfo] = useState<any>(null);
+  
   const [loading, setLoading] = useState(true);
-  const nfcEventEmitter = new NativeEventEmitter(NFCModule);
 
+  const context = useContext(UserContext);
+  if (!context) {
+    throw new Error('UserContext not found. Make sure your component is wrapped in UserProvider.');
+  }
+
+  const { user, setUser } = context;
   useEffect(() => {
-  const subscription = nfcEventEmitter.addListener('NfcEvent', (event) => {
-    if (event.type === 'balanceUpdate') {
-      setUserInfo((prev: any) => ({
-        ...prev,
-        balance: parseFloat(event.message),
-      }));
-      console.log('[LOG] Balance updated to:', event.message);
-    }
-  });
+    if (!deviceKey) return;
 
-  return () => subscription.remove();
-  }, []);
-
-  const fetchUserInfo = useCallback(async () => {
-    try {
-      const response = await fetch('http://172.20.10.13:3000/api/userinfo', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch user info');
-
-      //Saving user data to userInfo state
-      const data = await response.json();
-      setUserInfo(data);
-
-      // Save local balance for offline mode
-      if (data && typeof data.balance === 'number') {
-        try {
-          await NFCModule.saveLocalBalance(data.balance);
-          console.log('[LOG] Local balance saved:', data.balance);
-        } catch (e) {
-          console.error('Failed to save local balance', e);
-        }
+    (async () => {
+      try {
+        await NFCModule.saveDeviceKey(deviceKey);
+        console.log('Device key saved to SharedPreferences on Android');
+      } catch (e) {
+        console.error('Failed to save device key:', e);
       }
-
-    } catch (error) {
-      console.error('Error fetching user info:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchUserInfo(); // refresh balance when Home becomes active again
-    }, [fetchUserInfo])
-  );
+    })();
+  }, [deviceKey]);
 
   useEffect(() => {
-    fetchUserInfo(); // also run on first mount
-  }, [fetchUserInfo]);
+    const fetchUserInfo = async () => {
+      try {
+        const response = await fetch('http://172.20.10.13:3000/api/userinfo', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) throw new Error('Failed to fetch user info');
+        const data = await response.json();
+        setUser(data);
+
+        if (data?.balance !== undefined) {
+          await NFCModule.saveLocalBalance(data.balance);
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserInfo();
+  }, [token, setUser]);
+
+  // NFC listener
+  useEffect(() => {
+    const subscription = nfcEventEmitter.addListener('NfcEvent', (event) => {
+      if (event.type === 'balanceUpdate') {
+        setUser(prev => prev ? { ...prev, balance: parseFloat(event.message) } : prev);
+      }
+    });
+    return () => subscription.remove();
+  }, [setUser]);
 
 
 
@@ -96,13 +97,14 @@ export default function HomeScreen() {
   return (
   <View style={styles.container}>
     <View style={styles.centerContent}>
+
       <View style={styles.content}>
-        <Text style={styles.text}>Welcome, {userInfo.username}</Text>
-        <Text style={styles.subText}>Balance: €{userInfo.balance}</Text>
+        <Text style={styles.text}>Welcome, {user?.username}</Text>
+        <Text style={styles.subText}>Balance: €{user?.balance}</Text>
       </View>
 
-      <Nfc cardId={userInfo.cardId} />
-    
+     {user?.cardId && <Nfc cardId={user.cardId} />}
+
     </View>
   </View>
 );
@@ -148,10 +150,3 @@ const styles = StyleSheet.create({
   }
 
 });
-
-//  {/* <TouchableOpacity
-//         style={styles.nfcButton}
-//         onPress={() => navigation.navigate('Nfc', {cardId: userInfo.cardId})}
-//         >
-//         <Text style={styles.buttonText}>Go to NFC</Text>
-//         </TouchableOpacity> */}
