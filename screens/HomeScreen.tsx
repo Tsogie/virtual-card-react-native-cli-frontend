@@ -39,6 +39,8 @@ export default function HomeScreen() {
       try {
         await NFCModule.saveDeviceKey(deviceKey);
         console.log('Device key saved to SharedPreferences on Android');
+        await NFCModule.clearQueue();
+        console.log('Queue cleared');
       } catch (e) {
         console.error('Failed to save device key:', e);
       }

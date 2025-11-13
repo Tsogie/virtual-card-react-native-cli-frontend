@@ -116,6 +116,12 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Add WorkManager (required for offline sync jobs)
+    implementation "androidx.work:work-runtime:2.9.0"
+
+    // (Optional but recommended if you want Kotlin coroutines support)
+    implementation "androidx.work:work-runtime-ktx:2.9.0"
 }
 
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"

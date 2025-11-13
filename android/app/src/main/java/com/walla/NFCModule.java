@@ -60,6 +60,16 @@ public class NFCModule extends ReactContextBaseJavaModule {
         }
     }
 
+    @ReactMethod
+    public void clearQueue(Promise promise) {
+        try {
+            prefs.edit().remove("offline_queue").apply();
+            promise.resolve(true);
+        } catch (Exception e) {
+            promise.reject("CLEAR_Queue_FAILED", e);
+        }
+    }
+
     //Add method to clear local balance??
     
 

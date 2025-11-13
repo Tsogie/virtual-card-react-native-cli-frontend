@@ -1,4 +1,3 @@
-// context/UserContext.tsx
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -6,7 +5,7 @@ type User = {
   username: string;
   cardId: string;
   balance: number;
-  // add other fields if needed
+  
 };
 
 type UserContextType = {
@@ -22,7 +21,7 @@ type Props = { children: ReactNode };
 export const UserProvider = ({ children }: Props) => {
   const [user, setUser] = useState<User | null>(null);
 
-  // Optional: load user from AsyncStorage on app start
+  // load user from AsyncStorage on app start
   useEffect(() => {
     AsyncStorage.getItem('user')
       .then(json => {
@@ -30,7 +29,7 @@ export const UserProvider = ({ children }: Props) => {
       });
   }, []);
 
-  // Optional: save user to AsyncStorage whenever it changes
+  // save user to AsyncStorage whenever it changes
   useEffect(() => {
     if (user) AsyncStorage.setItem('user', JSON.stringify(user));
   }, [user]);

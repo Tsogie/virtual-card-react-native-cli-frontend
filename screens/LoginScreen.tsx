@@ -46,6 +46,11 @@ export default function LoginScreen({ navigation }: Props) {
       if (response.ok) {
         let deviceKey = await EncryptedStorage.getItem('device_key');
 
+        // if(deviceKey){
+        //   check against database to confirm it is for this usern
+        // }
+
+
         if (!deviceKey) {
           const registerRes = await fetch('http://172.20.10.13:3000/api/device/register', {
             method: 'POST',
