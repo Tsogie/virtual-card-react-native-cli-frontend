@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
+import Config from '../config';
 
 type SignUpScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -30,8 +31,6 @@ export default function Sign({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
 
-  const API_URL = 'http://172.20.10.13:3000/api'; 
-
   const isValidEmail = (email: string) => /\S+@\S+\.\S+/.test(email);
 
   const handleSignUp = async () => {
@@ -47,7 +46,7 @@ export default function Sign({ navigation }: Props) {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}`, {
+      const response = await fetch(`${Config.BASE_URL}/api`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, email }),

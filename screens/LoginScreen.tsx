@@ -1,28 +1,35 @@
-import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  TextInput, 
-  Alert 
+// LoginScreen.tsx
+import React, { useState, useContext } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  Alert
 } from 'react-native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import EncryptedStorage from 'react-native-encrypted-storage';
-import { RootStackParamList } from '../App';
+import { NativeModules } from 'react-native';
+import { UserContext } from '../context/UserContext';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../App';
+import Config from '../config';
 
-type LoginScreenNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  'Login'
->;
+const { NFCModule } = NativeModules;
 
-type Props = {
-  navigation: LoginScreenNavigationProp;
-};
-
-export default function LoginScreen({ navigation }: Props) {
+export default function LoginScreen() {
+  // ✅ Use useNavigation hook instead of props
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  const context = useContext(UserContext);
+  if (!context) {
+    throw new Error('UserContext not found');
+  }
+  const { fetchUserInfo } = context;
 
   const handleLogin = async () => {
     if (!username.trim()) {
@@ -33,48 +40,61 @@ export default function LoginScreen({ navigation }: Props) {
     try {
       setLoading(true);
 
-      const response = await fetch('http://172.20.10.13:3000/api/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'text/plain',
-          },
-          body: username,
+      // 1. Login and get JWT token
+      const response = await fetch(`${Config.BASE_URL}${Config.API.LOGIN}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        body: username,
       });
 
-      const textResponse = await response.text(); 
+      const token = await response.text(); 
 
-      if (response.ok) {
-        let deviceKey = await EncryptedStorage.getItem('device_key');
-
-        // if(deviceKey){
-        //   check against database to confirm it is for this usern
-        // }
-
-
-        if (!deviceKey) {
-          const registerRes = await fetch('http://172.20.10.13:3000/api/device/register', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${textResponse}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          const data = await registerRes.json();
-
-          // Type assertion: we trust that data.deviceKey exists and is a string
-          deviceKey = data.deviceKey as string;
-
-          // Now TypeScript knows deviceKey is string
-          await EncryptedStorage.setItem('device_key', deviceKey);
-        }
-
-        console.log('Device key:', deviceKey);
-        console.log('JWT Token:', textResponse);
-        navigation.replace('Main', {token: textResponse, deviceKey: deviceKey });
-
-      } else {
-        Alert.alert('Login Failed', textResponse || 'User not found');
+      if (!response.ok) {
+        Alert.alert('Login Failed', token || 'User not found');
+        return;
       }
+
+      // 2. Save token to native storage
+      await NFCModule.saveJwtToken(token);
+
+      // 3. Generate or retrieve Keystore keypair
+      const alias = `wallet_key_${username}`;
+      const publicKey = await NFCModule.generateKeyPair(alias);
+      console.log("Generated/Retrieved public key:", publicKey);
+
+      // 4. Save alias locally
+      await EncryptedStorage.setItem("current_key_alias", alias);
+      await NFCModule.saveKeyAlias(alias); 
+
+      // 5. Register device with backend
+      const registerRes = await fetch(`${Config.BASE_URL}${Config.API.DEVICE_REGISTER}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ alias, publicKey }),
+      });
+      
+      const data = await registerRes.json();
+      const deviceId = data.deviceId as string;
+      await NFCModule.saveDeviceId(deviceId); 
+      
+      console.log('Device registered:', data.message);
+
+      // 6. Fetch user info and populate context
+      await fetchUserInfo();
+
+      // 7. Clear offline queue from previous session
+      await NFCModule.clearQueue();
+      
+      Alert.alert('Login Successful', `Welcome ${username}!`);
+      
+      // 8. Navigate without token param
+      navigation.replace('Main');
+
     } catch (error) {
       console.error('Login error:', error);
       Alert.alert('Error', 'Could not connect to the server');
@@ -106,11 +126,11 @@ export default function LoginScreen({ navigation }: Props) {
         </Text>
       </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigation.navigate('Sign')}>
-            <Text style={styles.signUpLink}>
-            Create a new account? <Text style={styles.signUpText}>Sign Up</Text>
-            </Text>
-        </TouchableOpacity>
+      <TouchableOpacity onPress={() => navigation.navigate('Sign')}>
+        <Text style={styles.signUpLink}>
+          Create a new account? <Text style={styles.signUpText}>Sign Up</Text>
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -129,11 +149,26 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
     marginBottom: 20,
   },
-
-  input: { width: '100%', borderWidth: 1, borderColor: '#4CAF50', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16, color: '#000', backgroundColor: 'transparent' },
-
+  input: { 
+    width: '100%', 
+    borderWidth: 1, 
+    borderColor: '#4CAF50', 
+    borderRadius: 12, 
+    paddingHorizontal: 16, 
+    paddingVertical: 12, 
+    marginBottom: 16, 
+    color: '#000', 
+    backgroundColor: 'transparent' 
+  },
   signUpLink: { fontSize: 16, color: '#2E7D32' },
   signUpText: { fontWeight: 'bold', textDecorationLine: 'underline' },
-  button: { width: '100%', backgroundColor: '#66BB6A', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 16 },
+  button: { 
+    width: '100%', 
+    backgroundColor: '#66BB6A', 
+    paddingVertical: 14, 
+    borderRadius: 12, 
+    alignItems: 'center', 
+    marginBottom: 16 
+  },
   buttonText: { color: '#fff', fontSize: 18, fontWeight: '600' },
 });

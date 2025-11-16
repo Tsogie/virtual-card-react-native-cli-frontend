@@ -8,6 +8,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../App'; // adjust path if needed
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Config from '../config';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 type ProfileScreenRouteProp = RouteProp<RootStackParamList, 'Main'>;
@@ -23,7 +24,7 @@ export default function ProfileScreen(){
   
     const fetchUserInfo = useCallback(async () => {
       try {
-        const response = await fetch('http://172.20.10.13:3000/api/userinfo', {
+        const response = await fetch(`${Config.BASE_URL}${Config.API.USER_INFO}`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -60,7 +61,7 @@ export default function ProfileScreen(){
   
     try {
       const response = await fetch(
-        `http://172.20.10.13:3000/api/wallet/topup/${userInfo.cardId}`,
+        `${Config.BASE_URL}/api/wallet/topup/${userInfo.cardId}`,
         {
           method: 'PUT',
           headers: {

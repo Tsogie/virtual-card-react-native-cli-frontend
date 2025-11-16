@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Dim
 // import { RootStackParamList } from '../App';
 import { UserContext } from '../context/UserContext';
 import { NativeModules } from 'react-native';
+import Config from '../config';
 
 const { NFCModule } = NativeModules;
 const { width } = Dimensions.get('window');
@@ -28,10 +29,10 @@ export default function TopUpScreen() {
     try {
       // Send top-up request
       const response = await fetch(
-        `http://172.20.10.13:3000/api/wallet/topup/${user.cardId}`,
+        `${Config.BASE_URL}/api/wallet/topup/${user.cardId}`,
         {
           method: 'PUT',
-          
+
         }
       );
 

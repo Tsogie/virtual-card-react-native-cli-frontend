@@ -1,154 +1,176 @@
-import React, { useEffect, useState, useContext } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RouteProp } from '@react-navigation/native';
-import { RootStackParamList } from '../App';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import Nfc from './NfcOld';
-import { NativeEventEmitter, NativeModules } from 'react-native';
-import { UserContext } from '../context/UserContext';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, RefreshControl, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import Nfc from './Nfc';
+import { useUser } from '../context/UserContext';
+import { NativeModules } from 'react-native';
 const { NFCModule } = NativeModules;
 
-type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
-type HomeScreenRouteProp = RouteProp<RootStackParamList, 'Main'>;
-const nfcEventEmitter = new NativeEventEmitter(NFCModule);
-
-
 export default function HomeScreen() {
+  const { user, refreshBalance, isLoadingBalance, fetchUserInfo } = useUser();
+  const [initialLoading, setInitialLoading] = useState(true);
 
-  const navigation = useNavigation<HomeScreenNavigationProp>();
-  const route = useRoute<HomeScreenRouteProp>();
-
-  const { token, deviceKey } = route.params;
-
-  //const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
-  //const [userInfo, setUserInfo] = useState<any>(null);
-  
-  const [loading, setLoading] = useState(true);
-
-  const context = useContext(UserContext);
-  if (!context) {
-    throw new Error('UserContext not found. Make sure your component is wrapped in UserProvider.');
-  }
-
-  const { user, setUser } = context;
+  // Only needed if user navigated here directly (not from login)
   useEffect(() => {
-    if (!deviceKey) return;
-
-    (async () => {
-      try {
-        await NFCModule.saveDeviceKey(deviceKey);
-        console.log('Device key saved to SharedPreferences on Android');
-        await NFCModule.clearQueue();
-        console.log('Queue cleared');
-      } catch (e) {
-        console.error('Failed to save device key:', e);
-      }
-    })();
-  }, [deviceKey]);
-
-  useEffect(() => {
-    const fetchUserInfo = async () => {
-      try {
-        const response = await fetch('http://172.20.10.13:3000/api/userinfo', {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (!response.ok) throw new Error('Failed to fetch user info');
-        const data = await response.json();
-        setUser(data);
-
-        if (data?.balance !== undefined) {
-          await NFCModule.saveLocalBalance(data.balance);
+    const loadUserIfNeeded = async () => {
+      if (!user) {
+        try {
+          await fetchUserInfo();
+        } catch (error) {
+          console.error('[HomeScreen] Failed to load user:', error);
         }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
       }
+      setInitialLoading(false);
     };
 
-    fetchUserInfo();
-  }, [token, setUser]);
+    loadUserIfNeeded();
+  }, []); // Only run once on mount
 
-  // NFC listener
-  useEffect(() => {
-    const subscription = nfcEventEmitter.addListener('NfcEvent', (event) => {
-      if (event.type === 'balanceUpdate') {
-        setUser(prev => prev ? { ...prev, balance: parseFloat(event.message) } : prev);
-      }
-    });
-    return () => subscription.remove();
-  }, [setUser]);
-
-
-
-  if (loading) {
+  if (initialLoading) {
     return (
-      <View style={styles.container}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2E7D32" />
-        <Text style={styles.loadingText}>Loading user info...</Text>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
+  if (!user) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.errorText}>Failed to load user data</Text>
+        <Text style={styles.subText}>Please try logging in again</Text>
       </View>
     );
   }
 
   return (
-  <View style={styles.container}>
-    <View style={styles.centerContent}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      refreshControl={
+        <RefreshControl 
+          refreshing={isLoadingBalance} 
+          onRefresh={refreshBalance}
+          colors={['#2E7D32']}
+          tintColor="#2E7D32"
+        />
+      }
+    >
+      <View style={styles.centerContent}>
+        <View style={styles.headerSection}>
+          <Text style={styles.welcomeText}>Welcome, {user.username}! 👋</Text>
+          <Text style={styles.subtitle}>Your digital Leap Card is ready</Text>
+        </View>
 
-      <View style={styles.content}>
-        <Text style={styles.text}>Welcome, {user?.username}</Text>
-        <Text style={styles.subText}>Balance: €{user?.balance}</Text>
+        <View style={styles.balanceCard}>
+          <Text style={styles.balanceLabel}>Current Balance</Text>
+          <Text style={styles.balanceValue}>€{user.balance.toFixed(2)}</Text>
+        </View>
+        <TouchableOpacity onPress={async () => {
+          const result = await NFCModule.manualSyncTest();
+          Alert.alert('Result', result);
+        }}>
+          <Text>🧪 TEST SYNC NOW</Text>
+        </TouchableOpacity>
+
+        {/* NFC Component - gets all data from context automatically */}
+        <Nfc />
+
+        <View style={styles.infoBox}>
+          <Text style={styles.infoText}>
+            💡 Transactions are secured with hardware-backed cryptographic keys
+          </Text>
+        </View>
       </View>
-
-     {user?.cardId && <Nfc cardId={user.cardId} />}
-
-    </View>
-  </View>
-);
+    </ScrollView>
+  );
 }
 
-//const { height, width } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
- container: {
-  flex: 1,
-  backgroundColor: '#E8F5E9',
-  justifyContent: 'space-around', // spread content evenly vertically
-  alignItems: 'center',
+  container: {
+    flex: 1,
+    backgroundColor: '#E8F5E9',
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
   },
   centerContent: {
-  flex: 1,
-  justifyContent: 'center',
-  alignItems: 'center',
-  width: '100%',
-},
-  content: {
-    alignItems: 'center',
-    marginBottom: 100,
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
   },
-
-  text: {
-    fontSize: 22,
-    color: '#2E7D32',
+  headerSection: {
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  welcomeText: {
+    fontSize: 28,
     fontWeight: 'bold',
+    color: '#2E7D32',
     textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#558B2F',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  balanceCard: {
+    backgroundColor: '#A5D6A7',
+    padding: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  balanceLabel: {
+    fontSize: 14,
+    color: '#1B5E20',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  balanceValue: {
+    fontSize: 42,
+    fontWeight: 'bold',
+    color: '#1B5E20',
+    marginTop: 8,
+  },
+  infoBox: {
+    backgroundColor: '#DCEDC8',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 20,
+  },
+  infoText: {
+    fontSize: 13,
+    color: '#558B2F',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  loadingText: {
+    color: '#2E7D32',
+    marginTop: 12,
+    fontSize: 16,
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#C62828',
+    fontWeight: '600',
   },
   subText: {
-    fontSize: 18,
-    color: '#388E3C',
-    textAlign: 'center',
-    marginTop: 6,
+    fontSize: 14,
+    color: '#558B2F',
+    marginTop: 8,
   },
-  
-  
-  loadingText: { 
-    color: '#2E7D32', 
-    marginTop: 10, 
-  }
-
 });

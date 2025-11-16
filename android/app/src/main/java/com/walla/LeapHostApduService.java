@@ -37,6 +37,24 @@ import android.net.NetworkInfo;
 
 import androidx.work.*;
 
+import java.security.KeyStore;
+import java.security.PrivateKey;
+import java.security.Signature;
+
+import java.net.HttpURLConnection;
+import java.net.URL;
+
+import java.io.OutputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+
+import java.nio.charset.StandardCharsets;
+
+import android.util.Base64;
+
+import com.google.gson.Gson;
+
+
 
 public class LeapHostApduService extends HostApduService {
     private static final String TAG = "LeapHCE";
@@ -107,42 +125,54 @@ public class LeapHostApduService extends HostApduService {
                 int fare = ByteBuffer.wrap(data).getInt();
 
                 SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-                String deviceKey = prefs.getString("device_key", null);
-                double localBalance = Double.longBitsToDouble(
-                    prefs.getLong("local_balance", Double.doubleToRawLongBits(0.0))
-                );
-
-                if (deviceKey == null) {
-                    Log.w(TAG, "[LOG] No device key found");
+                
+                // Load keystore alias instead of deviceKey
+                String alias = prefs.getString("key_alias", null);
+                if (alias == null) {
+                    Log.w(TAG, "[LOG] No key alias found — device not registered");
                     return SW_FAIL;
                 }
 
-                Log.i(TAG, "[LOG] Fare=" + fare + ", Local balance=" + localBalance);
+                double newLocalBalance;
+                synchronized (this) {
 
-                // Check balance locally
-                if (localBalance < fare) {
-                    Log.w(TAG, "[LOG] Insufficient local balance");
-                    NFCModule.sendEventToJS("failure", "Insufficient local balance");
-                    return SW_FAIL;
+                    double localBalance = Double.longBitsToDouble(
+                        prefs.getLong("local_balance",
+                        Double.doubleToRawLongBits(0.0))
+                    );
+
+                    Log.i(TAG, "[LOG] Fare=" + fare + ", LocalBalance=" + localBalance);
+
+                    if (localBalance < fare) {
+                        NFCModule.sendEventToJS("failure", "Insufficient local balance");
+                        return SW_FAIL;
+                    }
+
+                    newLocalBalance = localBalance - fare;
+
+                    prefs.edit().putLong(
+                        "local_balance",
+                        Double.doubleToLongBits(newLocalBalance)
+                    ).apply();
                 }
 
-                // Deduct locally and respond immediately
-                double newLocalBalance = localBalance - fare;
-                prefs.edit().putLong("local_balance", Double.doubleToLongBits(newLocalBalance)).apply();
-                Log.i(TAG, "[LOG] Deducted locally. New local balance=" + newLocalBalance);
+                Log.i(TAG, "[LOG] Deducted locally. NewLocalBalance=" + newLocalBalance);
                 NFCModule.sendEventToJS("balanceUpdate", String.valueOf(newLocalBalance));
 
-                // Return OK to reader first
-                //new Thread(() -> syncWithBackend(deviceKey, fare, newLocalBalance)).start();
-                //return SW_OK;
+                // Create signed transaction object
+                OfflineTransaction tx = createSignedTransaction(alias, fare);
 
-                // Return OK to reader first
+
+                // Online/Offline logic
                 if (!isNetworkAvailable()) {
-                    queueTransactionLocally(deviceKey, fare);
-                    Log.i(TAG, "[LOG] Offline detected, transaction queued");
+                    queueTransactionLocally(tx);
+                    Log.i(TAG, "[LOG] Offline — queued transaction");
+
+                    scheduleOfflineSync();
                 } else {
-                    new Thread(() -> syncWithBackend(deviceKey, fare, newLocalBalance)).start();
+                    new Thread(() -> syncTransactionWithBackend(tx)).start();
                 }
+
                 return SW_OK;
 
             } catch (Exception e) {
@@ -163,119 +193,6 @@ public class LeapHostApduService extends HostApduService {
         return false;
     }
 
-    /** Try backend sync, or queue locally if offline */
-    private void syncWithBackend(String deviceKey, int fare, double currentBalance) {
-        try {
-            String result = redeemFareToBackend(deviceKey, fare);
-            if (result == null) {
-                Log.w(TAG, "[LOG] Backend unreachable. Queuing transaction.");
-                queueTransactionLocally(deviceKey, fare);
-                return;
-            }
-
-            JSONObject json = new JSONObject(result);
-            String status = json.optString("status", "");
-            //is here overriding balance from backend?
-            double newBalance = json.optDouble("newBalance", currentBalance);
-
-            if ("Success".equals(status)) {
-                SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-                prefs.edit().putLong("local_balance", Double.doubleToLongBits(newBalance)).apply();
-                NFCModule.sendEventToJS("balanceUpdate", String.valueOf(newBalance));
-                // Delay 10–20ms before sending success
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    NFCModule.sendEventToJS("success", "Fare deducted successfully");
-                }, 20);
-                
-                Log.i(TAG, "[LOG] Synced successfully. New backend balance=" + newBalance);
-            } else {
-                Log.w(TAG, "[LOG] Backend responded error: " + status);
-                NFCModule.sendEventToJS("failure", status);
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "[ERROR] Sync failed", e);
-            queueTransactionLocally(deviceKey, fare);
-        }
-    }
-
-    private void cleanOfflineQueue() {
-        SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-        String queueStr = prefs.getString("offline_queue", "[]");
-
-        try {
-            JSONArray queue = new JSONArray(queueStr);
-            JSONArray cleanQueue = new JSONArray();
-
-            for (int i = 0; i < queue.length(); i++) {
-                JSONObject tx = queue.getJSONObject(i);
-                // Only keep valid transactions
-                if (tx.has("deviceKey") && tx.has("fare")) {
-                    if (!tx.has("txId")) {
-                        tx.put("txId", UUID.randomUUID().toString());
-                    }
-                    cleanQueue.put(tx);
-                }
-            }
-
-            prefs.edit().putString("offline_queue", cleanQueue.toString()).apply();
-            Log.i("OfflineQueue", "Cleaned offline queue: " + cleanQueue.toString());
-        } catch (JSONException e) {
-            Log.e("OfflineQueue", "Failed to clean offline queue", e);
-        }
-    }
-
-
-    /** Queue the transaction to SharedPreferences for retry later */
-    private void queueTransactionLocally(String deviceKey, int fare) {
-        try {
-            SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-            String existingQueue = prefs.getString("offline_queue", "[]");
-            JSONArray queue = new JSONArray(existingQueue);
-
-            JSONObject tx = new JSONObject();
-            tx.put("txId", UUID.randomUUID().toString());
-            tx.put("deviceKey", deviceKey);
-            tx.put("fare", fare);
-            tx.put("timestamp", System.currentTimeMillis());
-
-            queue.put(tx);
-            prefs.edit().putString("offline_queue", queue.toString()).apply();
-
-            Log.i(TAG, "[LOG] Queued offline transaction (fare=" + fare + ")");
-            NFCModule.sendEventToJS("queued", "Transaction queued for later sync");
-
-            // Schedule sync attempt
-            scheduleOfflineSync();
-        } catch (JSONException e) {
-            Log.e(TAG, "[ERROR] Failed to queue offline transaction", e);
-        }
-    }
-
-    private String redeemFareToBackend(String deviceKey, int fare) {
-        JSONObject json = new JSONObject();
-        try {
-            json.put("deviceKey", deviceKey);
-            json.put("fare", fare);
-        } catch (JSONException e) {
-            Log.e(TAG, "[ERROR] JSON error", e);
-            return null;
-        }
-
-        RequestBody body = RequestBody.create(json.toString(), MediaType.parse("application/json"));
-        Request request = new Request.Builder()
-                .url("http://172.20.10.13:3000/api/wallet/redeem-device")
-                .post(body)
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            return response.isSuccessful() ? response.body().string() : null;
-        } catch (IOException e) {
-            Log.e(TAG, "[ERROR] Network error", e);
-            return null;
-        }
-
-    }
 
     @Override
     public void onDeactivated(int reason) {
@@ -353,8 +270,7 @@ public class LeapHostApduService extends HostApduService {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(TAG, "[LOG] HCE Service started or restarted");
-        // Clean the offline queue once
-        cleanOfflineQueue();
+        
         return START_STICKY;
     }
 
@@ -372,13 +288,155 @@ public class LeapHostApduService extends HostApduService {
 
         OneTimeWorkRequest workRequest = new OneTimeWorkRequest.Builder(OfflineSyncWorker.class)
                 .setConstraints(constraints)
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+                .addTag("offline-sync")
                 .build();
 
+        // ✅ Use REPLACE to ensure new work is always scheduled
         WorkManager.getInstance(getApplicationContext())
-                .enqueueUniqueWork("offline-sync", ExistingWorkPolicy.KEEP, workRequest);
+                .enqueueUniqueWork("offline-sync", ExistingWorkPolicy.REPLACE, workRequest);
 
-        Log.i(TAG, "[LOG] Scheduled offline sync work");
+        Log.i(TAG, "[WORK] Scheduled offline sync work (will run when network available)");
     }
+
+
+    private void queueTransactionLocally(OfflineTransaction tx) {
+        SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        String json = prefs.getString("tx_queue", "[]");
+
+        try {
+            JSONArray arr = new JSONArray(json);
+            arr.put(new JSONObject(new Gson().toJson(tx)));
+            prefs.edit().putString("tx_queue", arr.toString()).apply();
+        } catch (Exception e) {
+            Log.e("NFC", "Queue error", e);
+        }
+    }
+
+    private OfflineTransaction createSignedTransaction(String alias, int fare) throws Exception {
+        
+        OfflineTransaction tx = new OfflineTransaction();
+
+        tx.txId = UUID.randomUUID().toString();
+        tx.amount = fare;
+        tx.timestamp = System.currentTimeMillis();
+
+        // Build JSON payload (same structure you send)
+        JSONObject payload = new JSONObject();
+        payload.put("txId", tx.txId);
+        payload.put("fare", tx.amount);
+        payload.put("timestamp", tx.timestamp);
+
+        String payloadString = payload.toString(); // exact string you sign
+        tx.payload = payloadString; // store for sending
+        byte[] payloadBytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+
+
+        // Sign using EC / ECDSA (you created EC keys)
+        java.security.Signature signature = java.security.Signature.getInstance("SHA256withECDSA");
+        java.security.KeyStore ks = java.security.KeyStore.getInstance("AndroidKeyStore");
+        ks.load(null);
+
+        java.security.PrivateKey privateKey = (java.security.PrivateKey) ks.getKey(alias, null);
+        signature.initSign(privateKey);
+        signature.update(payloadBytes);
+
+        // Use NO_WRAP so there are no newlines
+        tx.signature = android.util.Base64.encodeToString(signature.sign(), android.util.Base64.NO_WRAP);
+
+        // Optionally keep original payload string so you can send it directly
+        // but in your sync method you base64-encode the JSON before sending,
+        // so just return signature and build request later as you already do.
+        return tx;
+    }
+
+
+  private String syncTransactionWithBackend(OfflineTransaction tx) {
+    HttpURLConnection conn = null;
+    try {
+        SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        String deviceId = prefs.getString("device_id", null);
+        if (deviceId == null) {
+            Log.e(TAG, "[ERROR] No deviceId found in prefs");
+            queueTransactionLocally(tx);
+            return null;
+        }
+
+        // Build request JSON
+        JSONObject requestBody = new JSONObject();
+        requestBody.put("deviceId", deviceId);
+        requestBody.put("payload", Base64.encodeToString(tx.payload.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
+        requestBody.put("signature", tx.signature);
+
+        // Create HTTP connection
+        URL url = new URL(AppConfig.Endpoints.walletRedeem(getApplicationContext()));
+        conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setDoOutput(true);
+        conn.setConnectTimeout(3000);
+        conn.setReadTimeout(3000);
+
+        Log.i(TAG, "[DEBUG] Sending payload: " + tx.payload);
+        Log.i(TAG, "[DEBUG] Request body: " + requestBody.toString());
+        // Send request
+        try (OutputStream os = conn.getOutputStream()) {
+            byte[] input = requestBody.toString().getBytes(StandardCharsets.UTF_8);
+            os.write(input, 0, input.length);
+        }
+
+        int status = conn.getResponseCode();
+        if (status == 200) {
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) sb.append(line);
+                
+                String responseJson = sb.toString();
+                Log.i(TAG, "[SUCCESS] Transaction synced: " + tx.txId);
+                Log.i(TAG, "[RESPONSE] " + responseJson);
+                
+                // ✅ Parse and send complete transaction data
+                try {
+                    JSONObject redeemResult = new JSONObject(responseJson);
+                    String resultStatus = redeemResult.getString("status");
+                    double newBalance = redeemResult.getDouble("newBalance");
+                    double fareDeducted = redeemResult.getDouble("fareDeducted");
+                    
+                    // Update local balance
+                    prefs.edit().putLong("local_balance", Double.doubleToRawLongBits(newBalance)).apply();
+                    Log.i(TAG, "[SYNC] Local balance updated to: " + newBalance);
+                    
+                    // ✅ Send complete transaction event
+                    JSONObject eventData = new JSONObject();
+                    eventData.put("status", resultStatus);
+                    eventData.put("newBalance", newBalance);
+                    eventData.put("fareDeducted", fareDeducted);
+                    
+                    NFCModule.sendEventToJS("transactionComplete", eventData.toString());
+                    
+                } catch (JSONException e) {
+                    Log.e(TAG, "[ERROR] Failed to parse backend response", e);
+                    NFCModule.sendEventToJS("failure", "Invalid response format");
+                }
+                
+                return responseJson;
+            }
+        } else {
+            Log.w(TAG, "[WARNING] Backend returned status " + status + ", requeueing");
+            queueTransactionLocally(tx);
+            NFCModule.sendEventToJS("syncFailed", "Backend returned status " + status);
+            return null;
+        }
+
+    } catch (Exception e) {
+        Log.e(TAG, "[ERROR] Sync failed, requeueing transaction", e);
+        queueTransactionLocally(tx);
+        NFCModule.sendEventToJS("syncFailed", "Network error: " + e.getMessage());
+        return null;
+    } finally {
+        if (conn != null) conn.disconnect();
+    }
+}
 
 }

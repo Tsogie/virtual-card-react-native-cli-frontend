@@ -8,7 +8,6 @@ import WelcomeScreen from './screens/WelcomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import Sign from './screens/Sign';
 import BottomTabs from './BottomTabs';
-import TopUpScreen from './screens/TopUpScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import CardDetailsScreen from './screens/CardDetailsScreen';
 
@@ -16,7 +15,7 @@ export type RootStackParamList = {
   Welcome: undefined;
   Sign: undefined;
   Login: undefined;
-  Main: { token: string, deviceKey: string }; 
+  Main: undefined;
   Profile: undefined;
   CardDetails: undefined;
 };

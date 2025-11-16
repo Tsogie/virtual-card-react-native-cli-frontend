@@ -37,7 +37,6 @@ const getTabBarIcon = (routeName: string) => ({ color, size }: { color: string; 
 export default function BottomTabs() {
 
   const route = useRoute<BottomTabsRouteProp>();
-  const { token, deviceKey } = route.params;
 
   return (
     <Tab.Navigator
@@ -50,7 +49,6 @@ export default function BottomTabs() {
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        initialParams={{ token, deviceKey }}
         options={{
           headerShown: true,
           title: 'Home',
