@@ -1,72 +1,70 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useUser } from '../context/UserContext';
 
 export default function Nfc() {
-  const { user, lastTransaction, transactionStatus } = useUser();
+  const { lastTransaction, transactionStatus } = useUser();
 
-  // Get status message based on transaction state
   const getStatusMessage = () => {
     switch (transactionStatus) {
       case 'processing':
-        return '💳 Processing transaction...';
+        return '⏳ Processing...';
       case 'success':
         return lastTransaction 
-          ? `✅ Success! €${lastTransaction.fareDeducted.toFixed(2)} deducted`
-          : '✅ Transaction successful';
+          ? `✅ €${lastTransaction.fareDeducted.toFixed(2)} deducted`
+          : '✅ Success';
       case 'failed':
-        return '❌ Transaction failed';
+        return '❌ Failed';
       case 'offline':
-        return '⚠️ Offline - Transaction queued for sync';
-      case 'idle':
+        return '📴 Queued for sync';
       default:
-        return '📱 Ready to tap - Hold phone to reader';
+        return '📱 Ready to tap';
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (transactionStatus) {
+      case 'success': return '#4CAF50';
+      case 'processing': return '#FF9800';
+      case 'failed': return '#F44336';
+      case 'offline': return '#2196F3';
+      default: return '#8E9AAF';
     }
   };
 
   return (
     <View style={styles.container}>
-      {/* Status indicator with color coding */}
-      <View style={[
-        styles.statusIndicator,
-        transactionStatus === 'success' && styles.statusSuccess,
-        transactionStatus === 'processing' && styles.statusProcessing,
-        transactionStatus === 'failed' && styles.statusFailed,
-        transactionStatus === 'offline' && styles.statusOffline,
-      ]}>
-        <Text style={styles.status}>{getStatusMessage()}</Text>
+      {/* Status Card */}
+      <View style={[styles.statusCard, { borderColor: getStatusColor() }]}>
+        <View style={styles.nfcIconContainer}>
+          <Text style={styles.nfcIcon}>📡</Text>
+        </View>
+        <Text style={[styles.statusText, { color: getStatusColor() }]}>
+          {getStatusMessage()}
+        </Text>
+        <Text style={styles.instructionText}>
+          Hold phone near reader to pay
+        </Text>
       </View>
 
-      {/* Balance display */}
-      {user && (
-        <View style={styles.balanceBox}>
-          <Text style={styles.balanceLabel}>Current Balance</Text>
-          <Text style={styles.balanceValue}>€{user.balance.toFixed(2)}</Text>
-        </View>
-      )}
-
-      {/* Last transaction details (shown for 10 seconds) */}
+      {/* Last Transaction */}
       {lastTransaction && Date.now() - lastTransaction.timestamp < 10000 && (
-        <View style={styles.transactionBox}>
-          <Text style={styles.transactionLabel}>Last Transaction</Text>
-          <Text style={styles.transactionText}>
-            Status: {lastTransaction.status}
-          </Text>
-          <Text style={styles.transactionText}>
-            Fare Deducted: €{lastTransaction.fareDeducted.toFixed(2)}
-          </Text>
-          <Text style={styles.transactionText}>
-            New Balance: €{lastTransaction.newBalance.toFixed(2)}
-          </Text>
+        <View style={styles.transactionCard}>
+          <Text style={styles.transactionTitle}>Last Transaction</Text>
+          <View style={styles.transactionRow}>
+            <Text style={styles.transactionLabel}>Amount</Text>
+            <Text style={styles.transactionValue}>
+              €{lastTransaction.fareDeducted.toFixed(2)}
+            </Text>
+          </View>
+          <View style={styles.transactionRow}>
+            <Text style={styles.transactionLabel}>New Balance</Text>
+            <Text style={styles.transactionValue}>
+              €{lastTransaction.newBalance.toFixed(2)}
+            </Text>
+          </View>
         </View>
       )}
-
-      {/* NFC Ready Indicator */}
-      <View style={styles.nfcIndicator}>
-        <Text style={styles.nfcIcon}>📡</Text>
-        <Text style={styles.nfcText}>NFC Enabled</Text>
-        <Text style={styles.nfcSubtext}>Tap your phone on the reader to pay</Text>
-      </View>
     </View>
   );
 }
@@ -74,93 +72,63 @@ export default function Nfc() {
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    padding: 16,
+  },
+  statusCard: {
+    backgroundColor: '#1A1F2E',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 2,
+  },
+  nfcIconContainer: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#242938',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#E8F5E9',
-    borderRadius: 12,
-    marginTop: 16,
-  },
-  statusIndicator: {
-    width: '100%',
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: '#C8E6C9',
-    marginBottom: 12,
-  },
-  statusSuccess: {
-    backgroundColor: '#A5D6A7',
-  },
-  statusProcessing: {
-    backgroundColor: '#FFF9C4',
-  },
-  statusFailed: {
-    backgroundColor: '#FFCDD2',
-  },
-  statusOffline: {
-    backgroundColor: '#FFE082',
-  },
-  status: {
-    fontSize: 16,
-    color: '#1B5E20',
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  balanceBox: {
-    backgroundColor: '#A5D6A7',
-    padding: 16,
-    borderRadius: 12,
-    marginTop: 8,
-    width: '100%',
-    alignItems: 'center',
-  },
-  balanceLabel: {
-    fontSize: 14,
-    color: '#1B5E20',
-    fontWeight: '600',
-  },
-  balanceValue: {
-    fontSize: 32,
-    color: '#1B5E20',
-    fontWeight: 'bold',
-    marginTop: 4,
-  },
-  transactionBox: {
-    backgroundColor: '#C8E6C9',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 12,
-    width: '100%',
-  },
-  transactionLabel: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#1B5E20',
-    marginBottom: 6,
-  },
-  transactionText: {
-    fontSize: 12,
-    color: '#2E7D32',
-    marginBottom: 2,
-  },
-  nfcIndicator: {
-    marginTop: 16,
-    alignItems: 'center',
-    paddingVertical: 12,
+    marginBottom: 16,
   },
   nfcIcon: {
-    fontSize: 40,
+    fontSize: 36,
+  },
+  statusText: {
+    fontSize: 18,
+    fontWeight: 'bold',
     marginBottom: 8,
   },
-  nfcText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2E7D32',
-  },
-  nfcSubtext: {
-    fontSize: 12,
-    color: '#558B2F',
-    marginTop: 4,
+  instructionText: {
+    fontSize: 14,
+    color: '#8E9AAF',
     textAlign: 'center',
+  },
+  transactionCard: {
+    backgroundColor: '#1A1F2E',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#2A2F3E',
+  },
+  transactionTitle: {
+    fontSize: 14,
+    color: '#8E9AAF',
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  transactionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  transactionLabel: {
+    fontSize: 14,
+    color: '#8E9AAF',
+  },
+  transactionValue: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });

@@ -22,7 +22,7 @@ const getTabBarIcon = (routeName: string) => ({ color, size }: { color: string; 
       iconName = 'home-outline';
       break;
     case 'Transactions':
-      iconName = 'card-outline';
+      iconName = 'receipt-outline'; 
       break;
     case 'TopUp':
       iconName = 'wallet-outline';
@@ -52,6 +52,7 @@ export default function BottomTabs() {
         options={{
           headerShown: true,
           title: 'Home',
+          
           headerRight: () => <ProfileMenuButton />,
         }}
       />
@@ -59,14 +60,18 @@ export default function BottomTabs() {
       <Tab.Screen
         name="TopUp"
         component={TopUpScreen}
-        options={{ title: 'Top Up' }}
+        options={{ title: 'Top Up', headerShown: false, }}
+
       />
 
-      <Tab.Screen
-        name="Transactions"
-        component={TransactionsScreen}
-        options={{ title: 'Transactions' }}
-      />
+     <Tab.Screen
+      name="Transactions"
+      component={TransactionsScreen}
+      options={{ 
+        title: 'Transactions',
+        headerShown: false, 
+      }}
+    />
     </Tab.Navigator>
   );
 }

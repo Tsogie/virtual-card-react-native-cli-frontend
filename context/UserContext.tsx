@@ -1,14 +1,16 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NativeModules, NativeEventEmitter } from 'react-native';
+import { NativeModules, NativeEventEmitter, AppState } from 'react-native'; 
 import Config from '../config';
 
 const { NFCModule } = NativeModules;
 
 type User = {
   username: string;
+  email: string;
   cardId: string;
   balance: number;
+  
 };
 
 type Transaction = {
@@ -33,11 +35,11 @@ export const UserContext = createContext<UserContextType | undefined>(undefined)
 type Props = { children: ReactNode };
 
 export const UserProvider = ({ children }: Props) => {
+  
   const [user, setUser] = useState<User | null>(null);
   const [lastTransaction, setLastTransaction] = useState<Transaction | null>(null);
   const [transactionStatus, setTransactionStatus] = useState<'idle' | 'processing' | 'success' | 'failed' | 'offline'>('idle');
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
-
 
   // Load user from AsyncStorage on app start
   useEffect(() => {
@@ -74,6 +76,21 @@ export const UserProvider = ({ children }: Props) => {
     }
   }, [user]);
 
+  // Listen to app state changes (background → foreground)
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        // App came to foreground - refresh balance from native storage
+        console.log('[UserContext] App resumed - refreshing balance');
+        refreshBalanceFromNative();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   // CENTRALIZED: Listen to NFC events
   useEffect(() => {
     const eventEmitter = new NativeEventEmitter(NFCModule);
@@ -83,7 +100,7 @@ export const UserProvider = ({ children }: Props) => {
       
       switch (event.type) {
         case 'balanceUpdate':
-          // Local balance deducted (before backend sync)
+           // Local balance deducted (before backend sync)
           const newBalance = parseFloat(event.message);
           setUser(prev => prev ? { ...prev, balance: newBalance } : null);
           setTransactionStatus('processing');
@@ -91,7 +108,7 @@ export const UserProvider = ({ children }: Props) => {
           break;
 
         case 'transactionComplete':
-          // Backend sync successful - parse complete transaction data
+           // Backend sync successful - parse complete transaction data
           try {
             const result = JSON.parse(event.message);
             
@@ -108,7 +125,7 @@ export const UserProvider = ({ children }: Props) => {
             
             console.log('[UserContext] Transaction complete:', result);
             
-            // Clear status after 5 seconds
+             // Clear status after 5 seconds
             setTimeout(() => setTransactionStatus('idle'), 5000);
             
           } catch (e) {
@@ -118,14 +135,14 @@ export const UserProvider = ({ children }: Props) => {
           break;
 
         case 'failure':
-          // Transaction failed
+           // Transaction failed
           console.error('[UserContext] Transaction failed:', event.message);
           setTransactionStatus('failed');
           setTimeout(() => setTransactionStatus('idle'), 5000);
           break;
 
         case 'syncFailed':
-          // Backend unreachable - transaction queued offline
+           // Backend unreachable - transaction queued offline
           console.warn('[UserContext] Sync failed (offline):', event.message);
           setTransactionStatus('offline');
           setTimeout(() => setTransactionStatus('idle'), 5000);
@@ -138,7 +155,18 @@ export const UserProvider = ({ children }: Props) => {
     };
   }, []);
 
-  //  Fetch user info from backend using stored token
+  // Refresh balance from native storage (without backend call)
+  const refreshBalanceFromNative = async () => {
+    try {
+      const localBalance = await NFCModule.getLocalBalance();
+      setUser(prev => prev ? { ...prev, balance: localBalance } : null);
+      console.log('[UserContext] Balance refreshed from native:', localBalance);
+    } catch (error) {
+      console.error('[UserContext] Failed to refresh balance from native:', error);
+    }
+  };
+
+  // Fetch user info from backend using stored token
   const fetchUserInfo = async () => {
     try {
       // Get token from native storage
@@ -155,14 +183,15 @@ export const UserProvider = ({ children }: Props) => {
       }
 
       const userInfo = await response.json();
-      
+    
       setUser({
         username: userInfo.username,
+        email: userInfo.email,        
         cardId: userInfo.cardId,
         balance: userInfo.balance,
       });
       
-      //  Sync local balance with backend (source of truth)
+      //  Sync local balance with backend (source of truth
       await NFCModule.saveLocalBalance(userInfo.balance);
       
       console.log('[UserContext] User info fetched successfully');

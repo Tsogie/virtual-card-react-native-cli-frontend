@@ -126,7 +126,6 @@ public class LeapHostApduService extends HostApduService {
 
                 SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
                 
-                // Load keystore alias instead of deviceKey
                 String alias = prefs.getString("key_alias", null);
                 if (alias == null) {
                     Log.w(TAG, "[LOG] No key alias found — device not registered");
@@ -134,49 +133,67 @@ public class LeapHostApduService extends HostApduService {
                 }
 
                 double newLocalBalance;
+                OfflineTransaction tx;
+                
+                // EXPANDED SYNCHRONIZED BLOCK - protects entire critical section
                 synchronized (this) {
-
+                    // Read balance
                     double localBalance = Double.longBitsToDouble(
                         prefs.getLong("local_balance",
                         Double.doubleToRawLongBits(0.0))
                     );
+                    Log.i(TAG, "[LOG] Fare=" + fare + " cents, LocalBalance=" + localBalance );
 
-                    Log.i(TAG, "[LOG] Fare=" + fare + ", LocalBalance=" + localBalance);
-
+                    // Check sufficient balance
                     if (localBalance < fare) {
                         NFCModule.sendEventToJS("failure", "Insufficient local balance");
                         return SW_FAIL;
                     }
 
+                    // Deduct fare
                     newLocalBalance = localBalance - fare;
 
-                    prefs.edit().putLong(
+                    // Persist new balance immediately
+                    boolean saved = prefs.edit().putLong(
                         "local_balance",
                         Double.doubleToLongBits(newLocalBalance)
-                    ).apply();
-                }
+                    ).commit();
 
-                Log.i(TAG, "[LOG] Deducted locally. NewLocalBalance=" + newLocalBalance);
-                NFCModule.sendEventToJS("balanceUpdate", String.valueOf(newLocalBalance));
+                    if (!saved) {
+                        Log.e(TAG, "[ERROR] Failed to save balance");
+                        return SW_FAIL;
+                    }
 
-                // Create signed transaction object
-                OfflineTransaction tx = createSignedTransaction(alias, fare);
+                    Log.i(TAG, "[LOG] Deducted locally. New local balance=" + newLocalBalance );
+                    
+                    // Send balance update for display
+                    NFCModule.sendEventToJS("balanceUpdate", String.valueOf(newLocalBalance));
 
+                    // Create signed transaction
+                    tx = createSignedTransaction(alias, fare);
+                    
+                    // Queue transaction immediately while still holding lock
+                    if (!isNetworkAvailable()) {
+                        queueTransactionLocally(tx);
+                        Log.i(TAG, "[LOG] Offline — queued transaction");
+                    }
+                    
+                } // ← Lock released AFTER all critical operations
 
-                // Online/Offline logic
-                if (!isNetworkAvailable()) {
-                    queueTransactionLocally(tx);
-                    Log.i(TAG, "[LOG] Offline — queued transaction");
-
-                    scheduleOfflineSync();
-                } else {
+                // Network operations outside lock. Tx is already queued/created
+                if (isNetworkAvailable()) {
+                    // Sync in background thread (tx is already created safely)
                     new Thread(() -> syncTransactionWithBackend(tx)).start();
+                } else {
+                    // Already queued inside synchronized block
+                    scheduleOfflineSync();
                 }
 
                 return SW_OK;
 
             } catch (Exception e) {
                 Log.e(TAG, "[ERROR] DEDUCT APDU failed", e);
+                NFCModule.sendEventToJS("failure", "Transaction failed: " + e.getMessage());
                 return SW_FAIL;
             }
         }
@@ -292,7 +309,7 @@ public class LeapHostApduService extends HostApduService {
                 .addTag("offline-sync")
                 .build();
 
-        // ✅ Use REPLACE to ensure new work is always scheduled
+        // Use REPLACE to ensure new work is always scheduled
         WorkManager.getInstance(getApplicationContext())
                 .enqueueUniqueWork("offline-sync", ExistingWorkPolicy.REPLACE, workRequest);
 
@@ -313,130 +330,154 @@ public class LeapHostApduService extends HostApduService {
         }
     }
 
+
+
     private OfflineTransaction createSignedTransaction(String alias, int fare) throws Exception {
         
         OfflineTransaction tx = new OfflineTransaction();
-
         tx.txId = UUID.randomUUID().toString();
-        tx.amount = fare;
+        tx.amount = fare; 
         tx.timestamp = System.currentTimeMillis();
 
-        // Build JSON payload (same structure you send)
         JSONObject payload = new JSONObject();
         payload.put("txId", tx.txId);
-        payload.put("fare", tx.amount);
+        payload.put("fare", fare); // Backend receives cents
         payload.put("timestamp", tx.timestamp);
-
-        String payloadString = payload.toString(); // exact string you sign
-        tx.payload = payloadString; // store for sending
+        
+        String payloadString = payload.toString(); //exact string to sing
+        tx.payload = payloadString;
         byte[] payloadBytes = payload.toString().getBytes(StandardCharsets.UTF_8);
-
-
+        
+        // Sign the payload
         // Sign using EC / ECDSA (you created EC keys)
         java.security.Signature signature = java.security.Signature.getInstance("SHA256withECDSA");
         java.security.KeyStore ks = java.security.KeyStore.getInstance("AndroidKeyStore");
         ks.load(null);
-
+        
         java.security.PrivateKey privateKey = (java.security.PrivateKey) ks.getKey(alias, null);
         signature.initSign(privateKey);
         signature.update(payloadBytes);
-
         // Use NO_WRAP so there are no newlines
         tx.signature = android.util.Base64.encodeToString(signature.sign(), android.util.Base64.NO_WRAP);
-
         // Optionally keep original payload string so you can send it directly
         // but in your sync method you base64-encode the JSON before sending,
         // so just return signature and build request later as you already do.
         return tx;
+
     }
 
+    private String syncTransactionWithBackend(OfflineTransaction tx) {
+        HttpURLConnection conn = null;
+        try {
+            SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+            String deviceId = prefs.getString("device_id", null);
+            if (deviceId == null) {
+                Log.e(TAG, "[ERROR] No deviceId found in prefs");
+                queueTransactionLocally(tx);
+                return null;
+            }
 
-  private String syncTransactionWithBackend(OfflineTransaction tx) {
-    HttpURLConnection conn = null;
-    try {
-        SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-        String deviceId = prefs.getString("device_id", null);
-        if (deviceId == null) {
-            Log.e(TAG, "[ERROR] No deviceId found in prefs");
-            queueTransactionLocally(tx);
-            return null;
-        }
+            // Build request JSON
+            JSONObject requestBody = new JSONObject();
+            requestBody.put("deviceId", deviceId);
+            requestBody.put("payload", Base64.encodeToString(tx.payload.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
+            requestBody.put("signature", tx.signature);
 
-        // Build request JSON
-        JSONObject requestBody = new JSONObject();
-        requestBody.put("deviceId", deviceId);
-        requestBody.put("payload", Base64.encodeToString(tx.payload.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
-        requestBody.put("signature", tx.signature);
+            // Create HTTP connection
+            URL url = new URL(AppConfig.Endpoints.walletRedeem(getApplicationContext()));
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(3000);
+            conn.setReadTimeout(3000);
 
-        // Create HTTP connection
-        URL url = new URL(AppConfig.Endpoints.walletRedeem(getApplicationContext()));
-        conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Content-Type", "application/json");
-        conn.setDoOutput(true);
-        conn.setConnectTimeout(3000);
-        conn.setReadTimeout(3000);
+            Log.i(TAG, "[DEBUG] Sending payload: " + tx.payload);
+            Log.i(TAG, "[DEBUG] Request body: " + requestBody.toString());
+            // Send request
+            try (OutputStream os = conn.getOutputStream()) {
+                byte[] input = requestBody.toString().getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
 
-        Log.i(TAG, "[DEBUG] Sending payload: " + tx.payload);
-        Log.i(TAG, "[DEBUG] Request body: " + requestBody.toString());
-        // Send request
-        try (OutputStream os = conn.getOutputStream()) {
-            byte[] input = requestBody.toString().getBytes(StandardCharsets.UTF_8);
-            os.write(input, 0, input.length);
-        }
-
-        int status = conn.getResponseCode();
-        if (status == 200) {
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = br.readLine()) != null) sb.append(line);
-                
-                String responseJson = sb.toString();
-                Log.i(TAG, "[SUCCESS] Transaction synced: " + tx.txId);
-                Log.i(TAG, "[RESPONSE] " + responseJson);
-                
-                // ✅ Parse and send complete transaction data
-                try {
-                    JSONObject redeemResult = new JSONObject(responseJson);
-                    String resultStatus = redeemResult.getString("status");
-                    double newBalance = redeemResult.getDouble("newBalance");
-                    double fareDeducted = redeemResult.getDouble("fareDeducted");
+            int status = conn.getResponseCode();
+            if (status == 200) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
                     
-                    // Update local balance
-                    prefs.edit().putLong("local_balance", Double.doubleToRawLongBits(newBalance)).apply();
-                    Log.i(TAG, "[SYNC] Local balance updated to: " + newBalance);
+                    String responseJson = sb.toString();
+                    Log.i(TAG, "[SUCCESS] Transaction synced: " + tx.txId);
+                    Log.i(TAG, "[RESPONSE] " + responseJson);
                     
-                    // ✅ Send complete transaction event
-                    JSONObject eventData = new JSONObject();
-                    eventData.put("status", resultStatus);
-                    eventData.put("newBalance", newBalance);
-                    eventData.put("fareDeducted", fareDeducted);
+                    // ✅ Parse and send complete transaction data
+                    try {
+                        JSONObject redeemResult = new JSONObject(responseJson);
+                        String resultStatus = redeemResult.getString("status");
+                        double newBalance = redeemResult.getDouble("newBalance");
+                        double fareDeducted = redeemResult.getDouble("fareDeducted");
+                        
+                        // Update local balance
+                        prefs.edit().putLong("local_balance", Double.doubleToRawLongBits(newBalance)).apply();
+                        Log.i(TAG, "[SYNC] Local balance updated to: " + newBalance);
+                        
+                        // ✅ Send complete transaction event
+                        JSONObject eventData = new JSONObject();
+                        eventData.put("status", resultStatus);
+                        eventData.put("newBalance", newBalance);
+                        eventData.put("fareDeducted", fareDeducted);
+                        
+                        NFCModule.sendEventToJS("transactionComplete", eventData.toString());
+                        
+                    } catch (JSONException e) {
+                        Log.e(TAG, "[ERROR] Failed to parse backend response", e);
+                        NFCModule.sendEventToJS("failure", "Invalid response format");
+                    }
                     
-                    NFCModule.sendEventToJS("transactionComplete", eventData.toString());
+                    return responseJson;
+                }
+            } else if (status >= 400 && status < 500) {
+
+                // Client error (4xx) - validation failed, DON'T REQUEUE
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream()))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
                     
-                } catch (JSONException e) {
-                    Log.e(TAG, "[ERROR] Failed to parse backend response", e);
-                    NFCModule.sendEventToJS("failure", "Invalid response format");
+                    String errorResponse = sb.toString();
+                    Log.e(TAG, "[VALIDATION ERROR] Transaction rejected by backend: " + errorResponse);
+                    
+                    // Parse error message and notify user
+                    try {
+                        JSONObject error = new JSONObject(errorResponse);
+                        String message = error.optString("message", "Transaction validation failed");
+                        NFCModule.sendEventToJS("failure", "Backend rejected: " + message);
+                    } catch (Exception e) {
+                        NFCModule.sendEventToJS("failure", "Transaction validation failed");
+                    }
+                    
+                    // not requeue - this will never succeed
+                    return null;
                 }
                 
-                return responseJson;
+            } else {
+                // Server error (5xx) or network issue - REQUEUE for retry
+                Log.w(TAG, "[ERROR] Backend error " + status + ", requeueing");
+                queueTransactionLocally(tx);
+                NFCModule.sendEventToJS("syncFailed", "Backend error, will retry");
+                return null;
             }
-        } else {
-            Log.w(TAG, "[WARNING] Backend returned status " + status + ", requeueing");
-            queueTransactionLocally(tx);
-            NFCModule.sendEventToJS("syncFailed", "Backend returned status " + status);
-            return null;
-        }
 
-    } catch (Exception e) {
-        Log.e(TAG, "[ERROR] Sync failed, requeueing transaction", e);
-        queueTransactionLocally(tx);
-        NFCModule.sendEventToJS("syncFailed", "Network error: " + e.getMessage());
-        return null;
-    } finally {
-        if (conn != null) conn.disconnect();
+        } catch (Exception e) {
+            Log.e(TAG, "[ERROR] Sync failed, requeueing transaction", e);
+            queueTransactionLocally(tx);
+            NFCModule.sendEventToJS("syncFailed", "Network error: " + e.getMessage());
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
     }
-}
+
 
 }

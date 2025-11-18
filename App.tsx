@@ -10,6 +10,8 @@ import Sign from './screens/Sign';
 import BottomTabs from './BottomTabs';
 import ProfileScreen from './screens/ProfileScreen';
 import CardDetailsScreen from './screens/CardDetailsScreen';
+import TransactionsScreen from './screens/TransactionsScreen';
+import TopUpScreen from './screens/TopUpScreen';
 
 export type RootStackParamList = {
   Welcome: undefined;
@@ -18,6 +20,8 @@ export type RootStackParamList = {
   Main: undefined;
   Profile: undefined;
   CardDetails: undefined;
+  TopUp: undefined;
+  Transactions: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -34,6 +38,9 @@ export default function App() {
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="CardDetails" component={CardDetailsScreen} />
           <Stack.Screen name="Main" component={BottomTabs} />
+          <Stack.Screen name="TopUp" component={TopUpScreen} />
+          <Stack.Screen name="Transactions" component={TransactionsScreen} />
+
         </Stack.Navigator>
       </NavigationContainer>
     </UserProvider>

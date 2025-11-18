@@ -31,7 +31,7 @@ export default function ProfileMenuButton() {
   return (
     <View>
       <TouchableOpacity onPress={() => setVisible(true)} style={{ marginRight: 15 }}>
-        <Ionicons name="person-circle-outline" size={28} color="#2E7D32" />
+        <Ionicons name="person-circle-outline" size={36} color="#2E7D32" />
       </TouchableOpacity>
 
       <Modal

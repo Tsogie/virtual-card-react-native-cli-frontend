@@ -177,6 +177,19 @@ public class NFCModule extends ReactContextBaseJavaModule {
         }
     }
 
+    // @ReactMethod
+    // public void saveLocalBalance(double balanceInEuros, Promise promise) {
+    //     try {
+    //         // Convert euros to cents before storing
+    //         int balanceInCents = (int) Math.round(balanceInEuros * 100);
+    //         prefs.edit().putInt("local_balance_cents", balanceInCents).apply();
+    //         promise.resolve(true);
+    //     } catch (Exception e) {
+    //         promise.reject("SAVE_BALANCE_FAILED", e);
+    //     }
+    // }
+
+
     @ReactMethod
     public void generateKeyPair(String alias, Promise promise) {
         try {
