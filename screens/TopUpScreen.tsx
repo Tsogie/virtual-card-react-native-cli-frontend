@@ -34,16 +34,16 @@ export default function TopUpScreen() {
   const [toastMessage, setToastMessage] = useState('');
   const toastAnim = new Animated.Value(0);
 
-  useEffect(() => {
-    const mockLastTopUp = {
-      amount: 10,
-      date: new Date(Date.now() - 86400000).toLocaleDateString('en-IE', {
-        day: 'numeric',
-        month: 'short',
-      }),
-    };
-    setLastTopUp(mockLastTopUp);
-  }, []);
+  // useEffect(() => {
+  //   const mockLastTopUp = {
+  //     amount: 10,
+  //     date: new Date(Date.now() - 86400000).toLocaleDateString('en-IE', {
+  //       day: 'numeric',
+  //       month: 'short',
+  //     }),
+  //   };
+  //   setLastTopUp(mockLastTopUp);
+  // }, []);
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -85,9 +85,15 @@ export default function TopUpScreen() {
     }
   };
 
+
   const handleTopUpPress = () => {
     if (!selectedAmount || selectedAmount <= 0) {
       Alert.alert('Invalid Amount', 'Please select or enter a valid amount');
+      return;
+    }
+    
+    if (selectedAmount < 0.01) {
+      Alert.alert('Invalid Amount', 'Minimum top-up is €0.01');
       return;
     }
 
