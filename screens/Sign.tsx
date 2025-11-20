@@ -43,20 +43,24 @@ export default function Sign({ navigation }: Props) {
       Alert.alert('Error', 'Please enter a valid email address.');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters.');
+    if (password.length < 9) {
+      Alert.alert('Error', 'Password must be at least 8 characters.');
       return;
     }
 
     setLoading(true);
 
     try {
-      const response = await fetch(`${Config.BASE_URL}/api/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({username, email, password}),
-      });
+        const url = `${Config.BASE_URL}${Config.API.USER_REGISTER}`;
+        console.log('Registering at URL:', url);  
+        
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({username, email, password}),
+        });
 
+      console.log('Response status:', response.status); 
       const token = await response.text();
 
       if (!response.ok) {

@@ -19,6 +19,7 @@ export const Config = {
   API: {
     LOGIN: '/api/login',
     DEVICE_REGISTER: '/api/device/register',
+    USER_REGISTER: '/api/register',
     USER_INFO: '/api/userinfo',
     WALLET_REDEEM: '/api/wallet/redeem',
     TOPUP: '/api/wallet/topup/',
