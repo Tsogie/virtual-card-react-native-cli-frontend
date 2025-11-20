@@ -39,8 +39,9 @@ export default function TransactionsScreen() {
       
       // Get JWT token from native storage
       const token = await NFCModule.getJwtToken();
+      console.log('Token retrieved:', token);
 
-      const response = await fetch(`${Config.BASE_URL}/api/transactions`, {
+      const response = await fetch(`${Config.BASE_URL}${Config.API.TRANSACTIONS}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -50,7 +51,12 @@ export default function TransactionsScreen() {
         throw new Error('Failed to fetch transactions');
       }
 
+      console.log('Response status:', response.status);
+     
+      console.log('Response body:', response);
+
       const data = await response.json();
+
       setTransactions(data);
     } catch (err) {
       console.error('[TransactionsScreen] Error:', err);
@@ -91,7 +97,7 @@ export default function TransactionsScreen() {
 
   const renderTransaction = ({ item }: { item: Transaction }) => {
     const isTopUp = item.type === 'TOPUP';
-    const amountColor = isTopUp ? '#4CAF50' : '#F44336';
+    const amountColor = isTopUp ? '#4CAF50' : '#c1291eff';
     const amountPrefix = isTopUp ? '+' : '-';
     const icon = isTopUp ? '💰' : '🚌';
     const label = isTopUp ? 'Top Up' : 'Fare Deduction';

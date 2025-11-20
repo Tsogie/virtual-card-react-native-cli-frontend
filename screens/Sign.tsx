@@ -28,34 +28,39 @@ type Props = {
 export default function Sign({ navigation }: Props) {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
 
   const isValidEmail = (email: string) => /\S+@\S+\.\S+/.test(email);
 
   const handleSignUp = async () => {
-    if (!username || !email) {
-      Alert.alert('Error', 'Please enter both username and email.');
+    if (!username || !email || !password) {
+      Alert.alert('Error', 'Please enter username, email, and password.');
       return;
     }
     if (!isValidEmail(email)) {
       Alert.alert('Error', 'Please enter a valid email address.');
       return;
     }
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters.');
+      return;
+    }
 
     setLoading(true);
 
     try {
-      const response = await fetch(`${Config.BASE_URL}/api`, {
+      const response = await fetch(`${Config.BASE_URL}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email }),
+        body: JSON.stringify({username, email, password}),
       });
 
-      const data = await response.json();
+      const token = await response.text();
 
       if (!response.ok) {
-        throw new Error(data?.message || 'Sign-up failed');
+        throw new Error(token || 'Sign-up failed');
       }
 
       Alert.alert('Success', 'User created successfully!', [
@@ -64,12 +69,13 @@ export default function Sign({ navigation }: Props) {
 
       setUsername('');
       setEmail('');
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+      setPassword('');
+  } catch (error: any) {
+    Alert.alert('Error', error.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <KeyboardAvoidingView
@@ -107,6 +113,22 @@ export default function Sign({ navigation }: Props) {
             autoCapitalize="none"
             autoCorrect={false}
             onFocus={() => setFocusedInput('email')}
+            onBlur={() => setFocusedInput(null)}
+            placeholderTextColor="#4CAF50aa"
+          />
+
+          <TextInput
+            style={[
+              styles.input,
+              focusedInput === 'password' && { borderColor: '#2E7D32' },
+            ]}
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={true}
+            autoCapitalize="none"
+            autoCorrect={false}
+            onFocus={() => setFocusedInput('password')}
             onBlur={() => setFocusedInput(null)}
             placeholderTextColor="#4CAF50aa"
           />

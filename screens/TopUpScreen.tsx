@@ -112,10 +112,16 @@ export default function TopUpScreen() {
     setLoading(true);
 
     try {
+      const token = await NFCModule.getJwtToken();
+
       const response = await fetch(
         `${Config.BASE_URL}/api/wallet/topup/${user.cardId}`,
         {
           method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
         }
       );
 

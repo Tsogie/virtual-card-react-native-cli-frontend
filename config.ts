@@ -21,6 +21,8 @@ export const Config = {
     DEVICE_REGISTER: '/api/device/register',
     USER_INFO: '/api/userinfo',
     WALLET_REDEEM: '/api/wallet/redeem',
+    TOPUP: '/api/wallet/topup/',
+    TRANSACTIONS: '/api/transactions',
   },
 
   /**

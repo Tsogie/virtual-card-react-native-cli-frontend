@@ -15,7 +15,7 @@ type Props = {
 export default function WelcomeScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Welcome to Digital Leap Wallet</Text>
+      <Text style={styles.title}>Welcome to Virtual Leap Card</Text>
 
       <TouchableOpacity
         style={styles.button}

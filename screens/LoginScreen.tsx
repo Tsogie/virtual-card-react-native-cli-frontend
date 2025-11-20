@@ -19,11 +19,13 @@ import Config from '../config';
 const { NFCModule } = NativeModules;
 
 export default function LoginScreen() {
-  // ✅ Use useNavigation hook instead of props
+  // Use useNavigation hook instead of props
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [focusedInput, setFocusedInput] = useState<string | null>(null);
   
   const context = useContext(UserContext);
   if (!context) {
@@ -43,10 +45,8 @@ export default function LoginScreen() {
       // 1. Login and get JWT token
       const response = await fetch(`${Config.BASE_URL}${Config.API.LOGIN}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain',
-        },
-        body: username,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
       });
 
       const token = await response.text(); 
@@ -75,8 +75,9 @@ export default function LoginScreen() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ alias, publicKey }),
+        body: JSON.stringify({alias, publicKey}),
       });
+      console.log('Register Response Status:', registerRes.status);
       
       const data = await registerRes.json();
       const deviceId = data.deviceId as string;
@@ -107,14 +108,36 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <Text style={styles.text}>Login Page</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Enter username"
-        value={username}
-        onChangeText={setUsername}
-        autoCapitalize="none"
-        placeholderTextColor="#4CAF50aa"
-      />
+        <TextInput
+            style={[
+              styles.input,
+              focusedInput === 'username' && { borderColor: '#2E7D32' },
+            ]}
+            placeholder="Username"
+            value={username}
+            onChangeText={setUsername}
+            autoCapitalize="none"
+            autoCorrect={false}
+            onFocus={() => setFocusedInput('username')}
+            onBlur={() => setFocusedInput(null)}
+            placeholderTextColor="#4CAF50aa"
+          />
+
+        <TextInput
+          style={[
+            styles.input,
+            focusedInput === 'password' && { borderColor: '#2E7D32' },
+          ]}
+          placeholder="Password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry={true}
+          autoCapitalize="none"
+          autoCorrect={false}
+          onFocus={() => setFocusedInput('password')}
+          onBlur={() => setFocusedInput(null)}
+          placeholderTextColor="#4CAF50aa"
+        />
 
       <TouchableOpacity
         style={[styles.button, loading && { opacity: 0.5 }]}
