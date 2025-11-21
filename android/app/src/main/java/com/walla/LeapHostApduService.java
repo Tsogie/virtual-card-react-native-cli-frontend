@@ -53,8 +53,8 @@ import java.nio.charset.StandardCharsets;
 import android.util.Base64;
 
 import com.google.gson.Gson;
-
-
+import androidx.security.crypto.EncryptedSharedPreferences;
+import androidx.security.crypto.MasterKey;
 
 public class LeapHostApduService extends HostApduService {
     private static final String TAG = "LeapHCE";
@@ -66,6 +66,25 @@ public class LeapHostApduService extends HostApduService {
             .connectTimeout(1500, TimeUnit.MILLISECONDS)
             .callTimeout(2500, TimeUnit.MILLISECONDS)
             .build();
+
+    private SharedPreferences getEncryptedPrefs() {
+        try {
+            MasterKey masterKey = new MasterKey.Builder(this)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build();
+
+            return EncryptedSharedPreferences.create(
+                    this,
+                    "AppPrefsEncrypted",
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            );
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to create EncryptedSharedPreferences", e);
+            return getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        }
+    }
 
     @Override
     public byte[] processCommandApdu(byte[] commandApdu, Bundle extras) {
@@ -124,8 +143,9 @@ public class LeapHostApduService extends HostApduService {
                 System.arraycopy(commandApdu, 5, data, 0, lc);
                 int fare = ByteBuffer.wrap(data).getInt();
 
-                SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-                
+                //SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+                SharedPreferences prefs = getEncryptedPrefs();
+
                 String alias = prefs.getString("key_alias", null);
                 if (alias == null) {
                     Log.w(TAG, "[LOG] No key alias found — device not registered");
@@ -175,7 +195,8 @@ public class LeapHostApduService extends HostApduService {
                     // Queue transaction immediately while still holding lock
                     if (!isNetworkAvailable()) {
                         queueTransactionLocally(tx);
-                        Log.i(TAG, "[LOG] Offline — queued transaction");
+                        Log.i(TAG, "[LOG] Offline: queued transaction");
+                        //NFCModule.sendEventToJS("syncFailed", "Offline test");
                     }
                     
                 } // ← Lock released AFTER all critical operations
@@ -187,6 +208,7 @@ public class LeapHostApduService extends HostApduService {
                 } else {
                     // Already queued inside synchronized block
                     scheduleOfflineSync();
+                    //NFCModule.sendEventToJS("syncFailed", "Offline test - 2");
                 }
 
                 return SW_OK;
@@ -259,7 +281,8 @@ public class LeapHostApduService extends HostApduService {
         // Token is simple holder
         // In prefs we store JSON like: {"tokens":[{"id":1,"key":"A1B2..."}, ...]}
         try {
-            SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+            SharedPreferences prefs = getEncryptedPrefs();
+            //SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
             String t = prefs.getString("tokens", null);
             if (t == null) {
                 // fallback demo tokens (hex)
@@ -318,7 +341,8 @@ public class LeapHostApduService extends HostApduService {
 
 
     private void queueTransactionLocally(OfflineTransaction tx) {
-        SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        SharedPreferences prefs = getEncryptedPrefs();
+        //SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
         String json = prefs.getString("tx_queue", "[]");
 
         try {
@@ -369,7 +393,8 @@ public class LeapHostApduService extends HostApduService {
     private String syncTransactionWithBackend(OfflineTransaction tx) {
         HttpURLConnection conn = null;
         try {
-            SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+            SharedPreferences prefs = getEncryptedPrefs();
+            //SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
             String deviceId = prefs.getString("device_id", null);
             if (deviceId == null) {
                 Log.e(TAG, "[ERROR] No deviceId found in prefs");
@@ -411,7 +436,7 @@ public class LeapHostApduService extends HostApduService {
                     Log.i(TAG, "[SUCCESS] Transaction synced: " + tx.txId);
                     Log.i(TAG, "[RESPONSE] " + responseJson);
                     
-                    // ✅ Parse and send complete transaction data
+                    // Parse and send complete transaction data
                     try {
                         JSONObject redeemResult = new JSONObject(responseJson);
                         String resultStatus = redeemResult.getString("status");
@@ -422,7 +447,7 @@ public class LeapHostApduService extends HostApduService {
                         prefs.edit().putLong("local_balance", Double.doubleToRawLongBits(newBalance)).apply();
                         Log.i(TAG, "[SYNC] Local balance updated to: " + newBalance);
                         
-                        // ✅ Send complete transaction event
+                        // Send complete transaction event
                         JSONObject eventData = new JSONObject();
                         eventData.put("status", resultStatus);
                         eventData.put("newBalance", newBalance);

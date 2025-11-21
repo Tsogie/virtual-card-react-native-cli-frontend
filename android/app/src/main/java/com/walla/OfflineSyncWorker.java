@@ -25,6 +25,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import android.util.Base64;
 
+import androidx.security.crypto.EncryptedSharedPreferences;
+import androidx.security.crypto.MasterKey;
+
 public class OfflineSyncWorker extends Worker {
     private static final String TAG = "OfflineSyncWorker";
 
@@ -33,12 +36,32 @@ public class OfflineSyncWorker extends Worker {
         Log.i(TAG, "[INIT] OfflineSyncWorker created");
     }
 
-  @NonNull
+    private SharedPreferences getEncryptedPrefs(Context context) {
+        try {
+            MasterKey masterKey = new MasterKey.Builder(context)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build();
+
+            return EncryptedSharedPreferences.create(
+                    context,
+                    "AppPrefsEncrypted",
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            );
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to create EncryptedSharedPreferences", e);
+            return context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
+        }
+    }
+
+@NonNull
 @Override
 public Result doWork() {
     Log.i(TAG, "[START] =========== OFFLINE SYNC STARTING ===========");
 
-    SharedPreferences prefs = getApplicationContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
+    SharedPreferences prefs = getEncryptedPrefs(getApplicationContext());
+    //SharedPreferences prefs = getApplicationContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
     String queueJson = prefs.getString("tx_queue", "[]");
     String deviceId = prefs.getString("device_id", null);
 
@@ -84,10 +107,10 @@ public Result doWork() {
                 
                 if (synced) {
                     successCount++;
-                    Log.i(TAG, "[SUCCESS] ✅ Transaction synced: " + tx.txId);
+                    Log.i(TAG, "[SUCCESS] Transaction synced: " + tx.txId);
                 } else {
                     failedTxs.put(txJson);
-                    Log.w(TAG, "[FAILED] ❌ Transaction failed: " + tx.txId);
+                    Log.w(TAG, "[FAILED] Transaction failed: " + tx.txId);
                 }
                 
             } catch (Exception e) {
@@ -96,7 +119,7 @@ public Result doWork() {
             }
         }
 
-        // ✅ Update queue with only failed transactions
+        // Update queue with only failed transactions
         String newQueueJson = failedTxs.toString();
         prefs.edit().putString("tx_queue", newQueueJson).apply();
 
@@ -104,7 +127,7 @@ public Result doWork() {
               failedTxs.length() + " failed");
         Log.i(TAG, "[LOG] Updated queue: " + newQueueJson);
 
-        // ✅ SIMPLE: Let WorkManager handle retries automatically
+        // SIMPLE: Let WorkManager handle retries automatically
         if (failedTxs.length() == 0) {
             Log.i(TAG, "[END] =========== OFFLINE SYNC FINISHED (all successful) ===========");
             return Result.success();
@@ -126,7 +149,7 @@ public Result doWork() {
         try {
             Log.i(TAG, "[HTTP] Preparing request for txId: " + tx.txId);
             
-            // ✅ Build request body
+            // Build request body
             JSONObject requestBody = new JSONObject();
             requestBody.put("deviceId", deviceId);
             requestBody.put("payload", Base64.encodeToString(
@@ -135,7 +158,7 @@ public Result doWork() {
 
             Log.i(TAG, "[HTTP] Request body: " + requestBody.toString());
 
-            // ✅ Create connection
+            // Create connection
             URL url = new URL(AppConfig.Endpoints.walletRedeem(getApplicationContext()));
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
@@ -146,7 +169,7 @@ public Result doWork() {
 
             Log.i(TAG, "[HTTP] Connecting to backend...");
 
-            // ✅ Send request
+            // Send request
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
             }
@@ -155,7 +178,7 @@ public Result doWork() {
             Log.i(TAG, "[HTTP] Response status: " + status);
             
             if (status == 200) {
-                // ✅ Read response
+                // Read response
                 try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
                     StringBuilder sb = new StringBuilder();
                     String line;
@@ -164,7 +187,7 @@ public Result doWork() {
                     String responseBody = sb.toString();
                     Log.i(TAG, "[HTTP] Response: " + responseBody);
                     
-                    // ✅ Parse and update local balance
+                    // Parse and update local balance
                     try {
                         JSONObject result = new JSONObject(responseBody);
                         double newBalance = result.getDouble("newBalance");
@@ -174,14 +197,14 @@ public Result doWork() {
                         
                         Log.i(TAG, "[BALANCE] Updated local balance to: " + newBalance);
                         
-                        // ✅ Send event to JS
+                        // Send event to JS
                         JSONObject eventData = new JSONObject();
                         eventData.put("status", result.getString("status"));
                         eventData.put("newBalance", newBalance);
                         eventData.put("fareDeducted", result.getDouble("fareDeducted"));
                         
                         NFCModule.sendEventToJS("transactionComplete", eventData.toString());
-                        Log.i(TAG, "[EVENT] ✅ Sent transactionComplete event to React Native");
+                        Log.i(TAG, "[EVENT] Sent transactionComplete event to React Native");
                         
                     } catch (Exception e) {
                         Log.e(TAG, "[ERROR] Failed to parse response or update balance", e);
@@ -190,7 +213,7 @@ public Result doWork() {
                     return true;
                 }
             } else {
-                Log.w(TAG, "[HTTP] ❌ Backend returned status " + status);
+                Log.w(TAG, "[HTTP] Backend returned status " + status);
                 
                 // Try to read error response
                 try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream()))) {
@@ -206,7 +229,7 @@ public Result doWork() {
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "[ERROR] ❌ Exception syncing transaction " + tx.txId, e);
+            Log.e(TAG, "[ERROR] Exception syncing transaction " + tx.txId, e);
             return false;
         } finally {
             if (conn != null) conn.disconnect();

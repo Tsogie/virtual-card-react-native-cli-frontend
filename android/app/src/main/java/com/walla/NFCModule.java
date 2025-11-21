@@ -34,6 +34,10 @@ import androidx.work.ExistingWorkPolicy;
 import androidx.work.BackoffPolicy;
 import java.util.concurrent.TimeUnit;
 
+import androidx.security.crypto.EncryptedSharedPreferences;
+import androidx.security.crypto.MasterKey;
+
+
 public class NFCModule extends ReactContextBaseJavaModule {
 
     private static final String MODULE_NAME = "NFCModule";
@@ -43,8 +47,24 @@ public class NFCModule extends ReactContextBaseJavaModule {
 
     public NFCModule(ReactApplicationContext context) {
     super(context);
-    prefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
     reactContext = context; // assign static reference here
+        try {
+            MasterKey masterKey = new MasterKey.Builder(context)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build();
+
+            prefs = EncryptedSharedPreferences.create(
+                    context,
+                    "AppPrefsEncrypted",
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            );
+        } catch (Exception e) {
+            // Fallback to regular SharedPreferences if encryption fails
+            Log.e(MODULE_NAME, "Failed to create EncryptedSharedPreferences", e);
+            prefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
+        }
     }
 
     public static void sendEventToJS(String type, String message) {
