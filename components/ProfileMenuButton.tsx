@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, TouchableOpacity, Text, Modal, StyleSheet } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
-import EncryptedStorage from 'react-native-encrypted-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeModules } from 'react-native';
 
 const { NFCModule } = NativeModules;
@@ -11,20 +11,25 @@ export default function ProfileMenuButton() {
   const [visible, setVisible] = useState(false);
   const navigation = useNavigation();
 
-  const handleLogout = async (navigation: any) => {
+  const handleLogout = async () => {
     try {
-      // Clear device key
-      await EncryptedStorage.removeItem('device_key');
+      console.log('[Logout] Starting logout...');
+      
+      // 1. Clear AsyncStorage
+      await AsyncStorage.removeItem('user');
+      
+      // 3. Clear all native SharedPreferences
+      await NFCModule.clearAllSessionData();
+      
+      // 4. Navigate to Welcome
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' as never }],
+      });
 
-      // Clear local balance in HCE module
-      await NFCModule.saveLocalBalance(0);
-
-      // Navigate to login screen
-      navigation.replace('Login');
-
-      console.log('User logged out successfully');
+      console.log('[Logout] Complete');
     } catch (error) {
-      console.error('Logout failed', error);
+      console.error('[Logout] Failed:', error);
     }
   };
 

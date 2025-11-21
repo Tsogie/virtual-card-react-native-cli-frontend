@@ -10,9 +10,9 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { UserContext } from '../context/UserContext';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import { NativeModules } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { NFCModule } = NativeModules;
 
@@ -34,13 +34,25 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await NFCModule.saveLocalBalance(0);
+              console.log('[Logout] Starting logout...');
+              
+              // 1. Clear AsyncStorage (React Native persistence)
+              await AsyncStorage.removeItem('user');
+              console.log('[Logout] AsyncStorage cleared');
+      
+              // 3. Clear ALL native SharedPreferences
+              await NFCModule.clearAllSessionData();
+              console.log('[Logout] Native SharedPreferences cleared');
+              
+              // 4. Navigate to Welcome
               navigation.reset({
                 index: 0,
-                routes: [{ name: 'Login' as never }],
+                routes: [{ name: 'Welcome' as never }],
               });
+              
+              console.log('[Logout] Complete');
             } catch (error) {
-              console.error('Logout failed', error);
+              console.error('[Logout] Failed:', error);
               Alert.alert('Error', 'Failed to logout');
             }
           },
@@ -53,7 +65,17 @@ export default function ProfileScreen() {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={true} />
-        <Text style={styles.loadingText}>Loading profile...</Text>
+        <Text style={styles.errorText}>Session expired</Text>
+        <Text style={styles.errorSubtext}>Please log in again</Text>
+        <TouchableOpacity 
+          style={styles.logoutButton}
+          onPress={() => navigation.reset({
+            index: 0,
+            routes: [{ name: 'Welcome' as never }],
+          })}
+        >
+          <Text style={styles.logoutText}>Go to Login</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -372,5 +394,18 @@ const styles = StyleSheet.create({
     color: '#5A6B7D',
     textAlign: 'center',
     marginBottom: 8,
+  },
+
+  // Error 
+  errorText: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: '#8E9AAF',
+    marginBottom: 24,
   },
 });
