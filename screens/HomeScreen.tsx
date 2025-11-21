@@ -71,8 +71,17 @@ export default function HomeScreen() {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={true} />
-        <Text style={styles.errorText}>Unable to load account</Text>
-        <Text style={styles.errorSubtext}>Please try logging in again</Text>
+        <Text style={styles.errorText}>Session expired</Text>
+        <Text style={styles.errorSubtext}>Please log in again</Text>
+        <TouchableOpacity 
+          style={styles.loginButton}
+          onPress={() => navigation.reset({
+            index: 0,
+            routes: [{ name: 'Welcome' as never }],
+          })}
+        >
+          <Text style={styles.loginButtonText}>Go to Login</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -484,5 +493,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8E9AAF',
     lineHeight: 20,
+  },
+  //Log in button
+  loginButton: {
+    marginTop: 24,
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  loginButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

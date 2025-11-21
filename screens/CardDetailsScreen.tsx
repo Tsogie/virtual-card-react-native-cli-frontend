@@ -20,7 +20,17 @@ export default function CardDetailsScreen() {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={true} />
-        <Text style={styles.loadingText}>Loading card details...</Text>
+        <Text style={styles.errorText}>Session expired</Text>
+        <Text style={styles.errorSubtext}>Please log in again</Text>
+        <TouchableOpacity 
+          style={styles.logoutButton}
+          onPress={() => navigation.reset({
+            index: 0,
+            routes: [{ name: 'Welcome' as never }],
+          })}
+        >
+          <Text style={styles.logoutText}>Go to Login</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -389,5 +399,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8E9AAF',
     lineHeight: 18,
+  },
+  // Error
+  errorText: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: '#8E9AAF',
+    marginBottom: 24,
+  },
+    // Logout Button
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 24,
+    backgroundColor: '#1A1F2E',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  logoutText: {
+    fontSize: 16,
+    color: '#F44336',
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
 });
