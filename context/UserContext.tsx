@@ -42,6 +42,7 @@ export const UserProvider = ({ children }: Props) => {
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
 
   // Load user from AsyncStorage on app start
+ 
   useEffect(() => {
     const initializeUser = async () => {
       try {
@@ -49,17 +50,14 @@ export const UserProvider = ({ children }: Props) => {
         await NFCModule.setBaseUrl(Config.BASE_URL);
         console.log('[UserContext] Backend URL synced to native code');
 
+        // Only load cached data - SplashScreen handles validation
         const json = await AsyncStorage.getItem('user');
         if (json) {
           const userData = JSON.parse(json);
           setUser(userData);
-
-          // Also fetch fresh data from backend if user exists
-          try {
-            await fetchUserInfo();
-          } catch (error) {
-            console.log('[UserContext] Could not fetch fresh user info, using cached data');
-          }
+          console.log('[UserContext] Loaded cached user data');
+        } else {
+          console.log('[UserContext] No cached user data');
         }
       } catch (error) {
         console.error('[UserContext] Failed to load user from storage:', error);
@@ -169,7 +167,6 @@ export const UserProvider = ({ children }: Props) => {
   // Fetch user info from backend using stored token
   const fetchUserInfo = async () => {
     try {
-      // Get token from native storage
       const token = await NFCModule.getJwtToken();
 
       const response = await fetch(`${Config.BASE_URL}${Config.API.USER_INFO}`, {
@@ -177,8 +174,24 @@ export const UserProvider = ({ children }: Props) => {
           'Authorization': `Bearer ${token}`,
         },
       });
+      console.log('[UserContext] Response status:', response.status);
+      
+      // Handle authentication errors (401 = Unauthorized, 403 = Forbidden)
+      if (response.status === 401 || response.status === 403) {
+        console.log('[UserContext] - clearing session');
+        
+        // Clear all session data
+        await AsyncStorage.removeItem('user');
+        await NFCModule.clearAllSessionData();
+        setUser(null);
+        
+        // The app will show "Unable to load account" on HomeScreen
+        // User will need to re-login
+        throw new Error('Token expired');
+      }
 
       if (!response.ok) {
+        console.log('[UserContext] Response not OK:', response.status);
         throw new Error('Failed to fetch user info');
       }
 
@@ -191,14 +204,13 @@ export const UserProvider = ({ children }: Props) => {
         balance: userInfo.balance,
       });
       
-      //  Sync local balance with backend (source of truth
       await NFCModule.saveLocalBalance(userInfo.balance);
       
       console.log('[UserContext] User info fetched successfully');
       
     } catch (error) {
       console.error('[UserContext] Failed to fetch user info:', error);
-      throw error; // Re-throw so caller can handle
+      throw error;
     }
   };
 
