@@ -153,6 +153,43 @@ public class NFCModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
+    public void clearAllSessionData(Promise promise) {
+        try {
+            SharedPreferences.Editor editor = prefs.edit();
+            
+            // Clear all session data
+            editor.remove("jwt_token");
+            editor.remove("device_id");
+            editor.remove("key_alias");
+            editor.remove("local_balance");
+            editor.remove("tx_queue");
+            editor.apply();
+            
+            Log.i(MODULE_NAME, "[LOGOUT] All session data cleared from SharedPreferences");
+            promise.resolve(true);
+        } catch (Exception e) {
+            Log.e(MODULE_NAME, "[LOGOUT] Failed to clear session data", e);
+            promise.reject("CLEAR_ERROR", e.getMessage());
+        }
+    }
+
+    @ReactMethod
+    public void isSessionValid(Promise promise) {
+        try {
+            String token = prefs.getString("jwt_token", null);
+            String deviceId = prefs.getString("device_id", null);
+            
+            boolean isValid = (token != null && !token.isEmpty() && 
+                            deviceId != null && !deviceId.isEmpty());
+            
+            Log.i(MODULE_NAME, "[SESSION] Valid: " + isValid);
+            promise.resolve(isValid);
+        } catch (Exception e) {
+            promise.reject("SESSION_CHECK_ERROR", e.getMessage());
+        }
+    }
+
+    @ReactMethod
     public void clearQueue(Promise promise) {
         try {
             prefs.edit().remove("tx_queue").apply();
@@ -164,7 +201,6 @@ public class NFCModule extends ReactContextBaseJavaModule {
 
     //Add method to clear local balance??
     
-
     //Save balance to sharedRef
     @ReactMethod
     public void saveLocalBalance(double balance, Promise promise) {
@@ -176,19 +212,6 @@ public class NFCModule extends ReactContextBaseJavaModule {
             promise.reject("SAVE_BALANCE_FAILED", e);
         }
     }
-
-    // @ReactMethod
-    // public void saveLocalBalance(double balanceInEuros, Promise promise) {
-    //     try {
-    //         // Convert euros to cents before storing
-    //         int balanceInCents = (int) Math.round(balanceInEuros * 100);
-    //         prefs.edit().putInt("local_balance_cents", balanceInCents).apply();
-    //         promise.resolve(true);
-    //     } catch (Exception e) {
-    //         promise.reject("SAVE_BALANCE_FAILED", e);
-    //     }
-    // }
-
 
     @ReactMethod
     public void generateKeyPair(String alias, Promise promise) {
