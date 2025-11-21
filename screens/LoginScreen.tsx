@@ -1,4 +1,3 @@
-// LoginScreen.tsx
 import React, { useState, useContext } from 'react';
 import {
   View,
@@ -65,7 +64,6 @@ export default function LoginScreen() {
       console.log("Generated/Retrieved public key:", publicKey);
 
       // 4. Save alias locally
-      await EncryptedStorage.setItem("current_key_alias", alias);
       await NFCModule.saveKeyAlias(alias); 
 
       // 5. Register device with backend

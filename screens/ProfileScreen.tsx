@@ -34,7 +34,6 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await EncryptedStorage.removeItem('device_key');
               await NFCModule.saveLocalBalance(0);
               navigation.reset({
                 index: 0,
