@@ -30,6 +30,7 @@ type UserContextType = {
   fetchUserInfo: () => Promise<void>;
 };
 
+// Create a context with createContext from react 
 export const UserContext = createContext<UserContextType | undefined>(undefined);
 
 type Props = { children: ReactNode };
@@ -74,7 +75,7 @@ export const UserProvider = ({ children }: Props) => {
     }
   }, [user]);
 
-  // Listen to app state changes (background → foreground)
+  // Listen to app state changes (background > foreground)
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
@@ -89,7 +90,7 @@ export const UserProvider = ({ children }: Props) => {
     };
   }, []);
 
-  // CENTRALIZED: Listen to NFC events
+  // Listen to NFC events
   useEffect(() => {
     const eventEmitter = new NativeEventEmitter(NFCModule);
     
@@ -102,6 +103,8 @@ export const UserProvider = ({ children }: Props) => {
           const newBalance = parseFloat(event.message);
           setUser(prev => prev ? { ...prev, balance: newBalance } : null);
           setTransactionStatus('processing');
+           // Clear status after 8 seconds
+          setTimeout(() => setTransactionStatus('idle'), 8000);
           console.log('[UserContext] Local balance updated to:', newBalance);
           break;
 
@@ -123,8 +126,8 @@ export const UserProvider = ({ children }: Props) => {
             
             console.log('[UserContext] Transaction complete:', result);
             
-             // Clear status after 5 seconds
-            setTimeout(() => setTransactionStatus('idle'), 5000);
+             // Clear status after 8 seconds
+            setTimeout(() => setTransactionStatus('idle'), 8000);
             
           } catch (e) {
             console.error('[UserContext] Failed to parse transaction:', e);
@@ -136,14 +139,13 @@ export const UserProvider = ({ children }: Props) => {
            // Transaction failed
           console.error('[UserContext] Transaction failed:', event.message);
           setTransactionStatus('failed');
-          setTimeout(() => setTransactionStatus('idle'), 5000);
+          setTimeout(() => setTransactionStatus('idle'), 8000);
           break;
 
-        case 'syncFailed':
+        case 'offline':
            // Backend unreachable - transaction queued offline
-          console.warn('[UserContext] Sync failed (offline):', event.message);
           setTransactionStatus('offline');
-          setTimeout(() => setTransactionStatus('idle'), 5000);
+          setTimeout(() => setTransactionStatus('idle'), 8000);
           break;
       }
     });
@@ -154,6 +156,7 @@ export const UserProvider = ({ children }: Props) => {
   }, []);
 
   // Refresh balance from native storage (without backend call)
+  // When the app is in the background, react native stops work
   const refreshBalanceFromNative = async () => {
     try {
       const localBalance = await NFCModule.getLocalBalance();

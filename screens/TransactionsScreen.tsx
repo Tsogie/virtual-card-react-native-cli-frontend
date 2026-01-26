@@ -24,6 +24,7 @@ type Transaction = {
 };
 
 export default function TransactionsScreen() {
+  
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -39,7 +40,6 @@ export default function TransactionsScreen() {
       
       // Get JWT token from native storage
       const token = await NFCModule.getJwtToken();
-      console.log('[Transaction] Token retrieved from async storage:', token);
 
       const response = await fetch(`${Config.BASE_URL}${Config.API.TRANSACTIONS}`, {
         headers: {

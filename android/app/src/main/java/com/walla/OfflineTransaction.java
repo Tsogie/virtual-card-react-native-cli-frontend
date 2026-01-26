@@ -7,7 +7,6 @@ public class OfflineTransaction {
     public String signature;  
     public String payload;
     
-    // Default constructor required for Gson
     public OfflineTransaction() {}
     
     public OfflineTransaction(String txId, int amount, long timestamp, String signature, String payload) {

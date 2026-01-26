@@ -7,6 +7,10 @@ import android.os.Bundle;
 import android.util.Log;
 
 import com.walla.NFCModule;
+import com.walla.OfflineSyncWorker;
+import com.walla.AppConfig;
+import com.walla.OfflineTransaction;
+import com.walla.SecureStorage;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -16,20 +20,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.TimeUnit;
 
-import android.os.Handler;
-import android.os.Looper;
-
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
-
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.security.MessageDigest;
-import java.util.Map;
-import java.util.HashMap;
 import java.util.UUID;
 
 import android.net.ConnectivityManager;
@@ -57,34 +48,14 @@ import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKey;
 
 public class LeapHostApduService extends HostApduService {
+    
     private static final String TAG = "LeapHCE";
 
     private static final byte[] SW_OK = new byte[]{(byte) 0x90, (byte) 0x00};
     private static final byte[] SW_FAIL = new byte[]{(byte) 0x69, (byte) 0x85};
 
-    private final OkHttpClient httpClient = new OkHttpClient.Builder()
-            .connectTimeout(1500, TimeUnit.MILLISECONDS)
-            .callTimeout(2500, TimeUnit.MILLISECONDS)
-            .build();
-
-    private SharedPreferences getEncryptedPrefs() {
-        try {
-            MasterKey masterKey = new MasterKey.Builder(this)
-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                    .build();
-
-            return EncryptedSharedPreferences.create(
-                    this,
-                    "AppPrefsEncrypted",
-                    masterKey,
-                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            );
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to create EncryptedSharedPreferences", e);
-            return getSharedPreferences("AppPrefs", MODE_PRIVATE);
-        }
-    }
+    private static String cachedAlias = null;
+    private static Double cachedBalance = null;
 
     @Override
     public byte[] processCommandApdu(byte[] commandApdu, Bundle extras) {
@@ -98,43 +69,6 @@ public class LeapHostApduService extends HostApduService {
             return concat("LEAP_OK".getBytes(), SW_OK);
         }
 
-        // GET CHALLENGE (CLA=0x80 INS=0x84)
-        if (commandApdu.length >= 5 && (commandApdu[0] & 0xFF) == 0x80 && (commandApdu[1] & 0xFF) == 0x84) {
-            try {
-                int lc = commandApdu[4] & 0xFF;
-                if (lc <= 0 || commandApdu.length < 5 + lc) return SW_FAIL;
-                byte[] challenge = new byte[lc];
-                System.arraycopy(commandApdu, 5, challenge, 0, lc);
-
-                Token tok = pickToken();
-                if (tok == null) {
-                    Log.w(TAG, "[LOG] No token available");
-                    return SW_FAIL;
-                }
-
-                // compute HMAC-SHA256(challenge) with tok.key
-                byte[] hmac = hmacSha256(tok.key, challenge);
-
-                // truncate signature to first 8 bytes (for APDU size). For test/demo 8 is okay.
-                int sigLen = 8;
-                byte[] sig = new byte[sigLen];
-                System.arraycopy(hmac, 0, sig, 0, sigLen);
-
-                // response = tokenId(1 byte) + sig(8 bytes) + SW_OK
-                byte[] response = new byte[1 + sigLen + 2];
-                response[0] = tok.id;
-                System.arraycopy(sig, 0, response, 1, sigLen);
-                response[response.length - 2] = SW_OK[0];
-                response[response.length - 1] = SW_OK[1];
-
-                Log.i(TAG, "[LOG] GET_CHALLENGE responded with tokenId=" + (tok.id & 0xFF) + " sig=" + bytesToHex(sig));
-                return response;
-            } catch (Exception e) {
-                Log.e(TAG, "[ERROR] GET_CHALLENGE handling", e);
-                return SW_FAIL;
-            }
-        }
-
         // ---- DEDUCT FARE ----
         if (commandApdu.length >= 9 && commandApdu[0] == (byte) 0x80 && commandApdu[1] == (byte) 0x10) {
             try {
@@ -142,75 +76,81 @@ public class LeapHostApduService extends HostApduService {
                 byte[] data = new byte[lc];
                 System.arraycopy(commandApdu, 5, data, 0, lc);
                 int fare = ByteBuffer.wrap(data).getInt();
-
-                //SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-                SharedPreferences prefs = getEncryptedPrefs();
-
-                String alias = prefs.getString("key_alias", null);
-                if (alias == null) {
-                    Log.w(TAG, "[LOG] No key alias found — device not registered");
-                    return SW_FAIL;
-                }
-
+       
+                String alias;
                 double newLocalBalance;
-                OfflineTransaction tx;
-                
+                                
                 // EXPANDED SYNCHRONIZED BLOCK - protects entire critical section
                 synchronized (this) {
-                    // Read balance
-                    double localBalance = Double.longBitsToDouble(
-                        prefs.getLong("local_balance",
-                        Double.doubleToRawLongBits(0.0))
-                    );
-                    Log.i(TAG, "[LOG] Fare=" + fare + " cents, LocalBalance=" + localBalance );
 
+                    if (cachedAlias == null || cachedBalance == null) {
+                        SharedPreferences prefs = SecureStorage.getEncryptedPrefs(this);
+                        cachedAlias = prefs.getString("key_alias", null);
+                        long bits = prefs.getLong("local_balance", Double.doubleToRawLongBits(0.0));
+                        cachedBalance = Double.longBitsToDouble(bits);
+                        Log.i(TAG, "Cache miss - loaded from disk");
+                    }
+                    
+                    alias = cachedAlias;
+                    double localBalance = cachedBalance;
+
+                    if (alias == null) {
+                        Log.w(TAG, "[LOG] No key alias found — device not registered");
+                        return SW_FAIL;
+                    }
+
+                    // Read balance
                     // Check sufficient balance
                     if (localBalance < fare) {
-                        NFCModule.sendEventToJS("failure", "Insufficient local balance");
+                        NFCModule.sendEventToJS("failure", "Insufficient");
+                        Log.i(TAG, "[LOG] Insufficient funds; LocalBalance=" + localBalance);
                         return SW_FAIL;
                     }
 
-                    // Deduct fare
+                    // Deduct in memory INSTANTLY
                     newLocalBalance = localBalance - fare;
+                    cachedBalance = newLocalBalance;
 
-                    // Persist new balance immediately
-                    boolean saved = prefs.edit().putLong(
-                        "local_balance",
-                        Double.doubleToLongBits(newLocalBalance)
-                    ).commit();
-
-                    if (!saved) {
-                        Log.e(TAG, "[ERROR] Failed to save balance");
-                        return SW_FAIL;
-                    }
-
+                    Log.i(TAG, "[LOG] Fare=" + fare + " euros, LocalBalance = " + localBalance );
                     Log.i(TAG, "[LOG] Deducted locally. New local balance=" + newLocalBalance );
                     
-                    // Send balance update for display
-                    NFCModule.sendEventToJS("balanceUpdate", String.valueOf(newLocalBalance));
-
-                    // Create signed transaction
-                    tx = createSignedTransaction(alias, fare);
                     
-                    // Queue transaction immediately while still holding lock
-                    if (!isNetworkAvailable()) {
-                        queueTransactionLocally(tx);
-                        Log.i(TAG, "[LOG] Offline: queued transaction");
-                        //NFCModule.sendEventToJS("syncFailed", "Offline test");
+                } 
+
+                NFCModule.sendEventToJS("balanceUpdate", String.valueOf(newLocalBalance));
+                
+                final String finalAlias = alias;
+                final int finalFare = fare;
+                final double finalBalance = newLocalBalance;
+                
+                new Thread(() -> {
+                    try {
+                        // Persist balance to disk
+                        SharedPreferences prefs = SecureStorage.getEncryptedPrefs(this);
+                        prefs.edit().putLong("local_balance", 
+                            Double.doubleToRawLongBits(finalBalance)).commit();
+                        updateBalanceCache(finalBalance);
+                        Log.i(TAG, "Balance persisted to disk");
+                        
+                        // Create signed transaction (slow - ECDSA signing)
+                        OfflineTransaction tx = createSignedTransaction(finalAlias, finalFare);
+                        
+                        // Network/queue operations
+                        if (isNetworkAvailable()) {
+                            syncTransactionWithBackend(tx);
+                        } else {
+                            queueTransactionLocally(tx);
+                            scheduleOfflineSync();
+                            NFCModule.sendEventToJS("offline", "Offline transaction");
+                            Log.i(TAG, "[LOG] Offline: queued transaction");
+                        }
+                        
+                    } catch (Exception e) {
+                        Log.e(TAG, "[ERROR] Background processing failed", e);
                     }
-                    
-                } // ← Lock released AFTER all critical operations
+                }).start();
 
-                // Network operations outside lock. Tx is already queued/created
-                if (isNetworkAvailable()) {
-                    // Sync in background thread (tx is already created safely)
-                    new Thread(() -> syncTransactionWithBackend(tx)).start();
-                } else {
-                    // Already queued inside synchronized block
-                    scheduleOfflineSync();
-                    //NFCModule.sendEventToJS("syncFailed", "Offline test - 2");
-                }
-
+                // RETURN IMMEDIATELY
                 return SW_OK;
 
             } catch (Exception e) {
@@ -223,13 +163,39 @@ public class LeapHostApduService extends HostApduService {
         return SW_FAIL;
     }
 
+    public static void updateBalanceCache(double newBalance) {
+        cachedBalance = newBalance;
+        Log.i(TAG, "Balance cache updated: " + newBalance);
+    }
+
+    public static void clearCache() {
+        cachedAlias = null;
+        cachedBalance = null;
+        Log.i(TAG, "Cache cleared");
+    }
+
+
     private boolean isNetworkAvailable() {
         ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-        if (cm != null) {
+        if (cm == null) return false;
+        
+        // Modern API (Android 6.0+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            android.net.Network network = cm.getActiveNetwork();
+            if (network == null) return false;
+            
+            android.net.NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
+            if (capabilities == null) return false;
+            
+            // Check if network has internet capability
+            return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                && capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+        } else {
+            // Fallback for older Android versions
             android.net.NetworkInfo ni = cm.getActiveNetworkInfo();
-            return ni != null && ni.isConnected();
+            return ni != null && ni.isConnectedOrConnecting();
         }
-        return false;
+    
     }
 
 
@@ -268,57 +234,11 @@ public class LeapHostApduService extends HostApduService {
         return data;
     }
 
-    // HMAC-SHA256 and return raw bytes
-    private byte[] hmacSha256(byte[] key, byte[] data) throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        SecretKeySpec keySpec = new SecretKeySpec(key, "HmacSHA256");
-        mac.init(keySpec);
-        return mac.doFinal(data);
-    }
-
-    // Pick token from SharedPreferences or fallback. For demo use round-robin or first token.
-    private Token pickToken() {
-        // Token is simple holder
-        // In prefs we store JSON like: {"tokens":[{"id":1,"key":"A1B2..."}, ...]}
-        try {
-            SharedPreferences prefs = getEncryptedPrefs();
-            //SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-            String t = prefs.getString("tokens", null);
-            if (t == null) {
-                // fallback demo tokens (hex)
-                Map<Integer,String> demo = new HashMap<>();
-                demo.put(1, "A1B2C3D4E5F60708A1B2C3D4E5F60708"); // 32 hex = 16 bytes
-                demo.put(2, "0102030405060708090A0B0C0D0E0F10");
-                return new Token( (byte)1, hexToBytes(demo.get(1)) );
-            } else {
-                // parse JSON quickly (lightweight)
-                JSONObject jobj = new JSONObject(t);
-                JSONArray arr = jobj.optJSONArray("tokens");
-                if (arr != null && arr.length() > 0) {
-                    JSONObject it = arr.getJSONObject(0);
-                    int id = it.getInt("id");
-                    String keyhex = it.getString("key");
-                    return new Token((byte)id, hexToBytes(keyhex));
-                }
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "pickToken error", e);
-        }
-        return null;
-    }
-
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(TAG, "[LOG] HCE Service started or restarted");
         
         return START_STICKY;
-    }
-
-    // small holder class
-    private static class Token {
-        public final byte id;
-        public final byte[] key;
-        public Token(byte id, byte[] key) { this.id = id; this.key = key; }
     }
 
     private void scheduleOfflineSync() {
@@ -332,7 +252,7 @@ public class LeapHostApduService extends HostApduService {
                 .addTag("offline-sync")
                 .build();
 
-        // Use REPLACE to ensure new work is always scheduled
+        // Ensure new work is always scheduled
         WorkManager.getInstance(getApplicationContext())
                 .enqueueUniqueWork("offline-sync", ExistingWorkPolicy.REPLACE, workRequest);
 
@@ -341,8 +261,8 @@ public class LeapHostApduService extends HostApduService {
 
 
     private void queueTransactionLocally(OfflineTransaction tx) {
-        SharedPreferences prefs = getEncryptedPrefs();
-        //SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+
+        SharedPreferences prefs = SecureStorage.getEncryptedPrefs(this);
         String json = prefs.getString("tx_queue", "[]");
 
         try {
@@ -354,8 +274,6 @@ public class LeapHostApduService extends HostApduService {
         }
     }
 
-
-
     private OfflineTransaction createSignedTransaction(String alias, int fare) throws Exception {
         
         OfflineTransaction tx = new OfflineTransaction();
@@ -365,7 +283,7 @@ public class LeapHostApduService extends HostApduService {
 
         JSONObject payload = new JSONObject();
         payload.put("txId", tx.txId);
-        payload.put("fare", fare); // Backend receives cents
+        payload.put("fare", fare); 
         payload.put("timestamp", tx.timestamp);
         
         String payloadString = payload.toString(); //exact string to sing
@@ -373,7 +291,7 @@ public class LeapHostApduService extends HostApduService {
         byte[] payloadBytes = payload.toString().getBytes(StandardCharsets.UTF_8);
         
         // Sign the payload
-        // Sign using EC / ECDSA (you created EC keys)
+        // Sign using EC / ECDSA 
         java.security.Signature signature = java.security.Signature.getInstance("SHA256withECDSA");
         java.security.KeyStore ks = java.security.KeyStore.getInstance("AndroidKeyStore");
         ks.load(null);
@@ -381,20 +299,16 @@ public class LeapHostApduService extends HostApduService {
         java.security.PrivateKey privateKey = (java.security.PrivateKey) ks.getKey(alias, null);
         signature.initSign(privateKey);
         signature.update(payloadBytes);
-        // Use NO_WRAP so there are no newlines
+        // NO_WRAP so there are no newlines
         tx.signature = android.util.Base64.encodeToString(signature.sign(), android.util.Base64.NO_WRAP);
-        // Optionally keep original payload string so you can send it directly
-        // but in your sync method you base64-encode the JSON before sending,
-        // so just return signature and build request later as you already do.
-        return tx;
 
+        return tx;
     }
 
     private String syncTransactionWithBackend(OfflineTransaction tx) {
         HttpURLConnection conn = null;
         try {
-            SharedPreferences prefs = getEncryptedPrefs();
-            //SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+            SharedPreferences prefs = SecureStorage.getEncryptedPrefs(this);
             String deviceId = prefs.getString("device_id", null);
             if (deviceId == null) {
                 Log.e(TAG, "[ERROR] No deviceId found in prefs");
@@ -414,11 +328,9 @@ public class LeapHostApduService extends HostApduService {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setDoOutput(true);
-            conn.setConnectTimeout(3000);
-            conn.setReadTimeout(3000);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
 
-            Log.i(TAG, "[DEBUG] Sending payload: " + tx.payload);
-            Log.i(TAG, "[DEBUG] Request body: " + requestBody.toString());
             // Send request
             try (OutputStream os = conn.getOutputStream()) {
                 byte[] input = requestBody.toString().getBytes(StandardCharsets.UTF_8);
@@ -444,6 +356,7 @@ public class LeapHostApduService extends HostApduService {
                         double fareDeducted = redeemResult.getDouble("fareDeducted");
                         
                         // Update local balance
+                        updateBalanceCache(newBalance);
                         prefs.edit().putLong("local_balance", Double.doubleToRawLongBits(newBalance)).apply();
                         Log.i(TAG, "[SYNC] Local balance updated to: " + newBalance);
                         
@@ -464,7 +377,7 @@ public class LeapHostApduService extends HostApduService {
                 }
             } else if (status >= 400 && status < 500) {
 
-                // Client error (4xx) - validation failed, DON'T REQUEUE
+                // DON'T REQUEUE
                 try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream()))) {
                     StringBuilder sb = new StringBuilder();
                     String line;
@@ -490,6 +403,7 @@ public class LeapHostApduService extends HostApduService {
                 // Server error (5xx) or network issue - REQUEUE for retry
                 Log.w(TAG, "[ERROR] Backend error " + status + ", requeueing");
                 queueTransactionLocally(tx);
+                scheduleOfflineSync();
                 NFCModule.sendEventToJS("syncFailed", "Backend error, will retry");
                 return null;
             }
@@ -503,6 +417,4 @@ public class LeapHostApduService extends HostApduService {
             if (conn != null) conn.disconnect();
         }
     }
-
-
 }

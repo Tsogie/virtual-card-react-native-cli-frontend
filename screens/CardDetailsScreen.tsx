@@ -104,7 +104,7 @@ export default function CardDetailsScreen() {
 
           <View style={styles.detailsCard}>
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Full Card ID</Text>
+              <Text style={styles.detailLabel}>ID</Text>
               <Text style={styles.detailValue}>{user.cardId}</Text>
             </View>
 
@@ -146,47 +146,6 @@ export default function CardDetailsScreen() {
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Valid Until</Text>
               <Text style={styles.detailValue}>31 Aug 2026</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Features Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Features</Text>
-
-          <View style={styles.featureCard}>
-            <View style={styles.featureIcon}>
-              <Ionicons name="shield-checkmark" size={24} color="#4CAF50" />
-            </View>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Secure Payments</Text>
-              <Text style={styles.featureText}>
-                Hardware-backed cryptographic signatures
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.featureCard}>
-            <View style={styles.featureIcon}>
-              <Ionicons name="flash" size={24} color="#FF9800" />
-            </View>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Offline Support</Text>
-              <Text style={styles.featureText}>
-                Works without internet connection
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.featureCard}>
-            <View style={styles.featureIcon}>
-              <Ionicons name="sync" size={24} color="#2196F3" />
-            </View>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Auto Sync</Text>
-              <Text style={styles.featureText}>
-                Transactions sync automatically
-              </Text>
             </View>
           </View>
         </View>
@@ -364,41 +323,6 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     marginRight: 6,
-  },
-
-  // Feature Card
-  featureCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1A1F2E',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#2A2F3E',
-  },
-  featureIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#242938',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  featureContent: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 15,
-    color: '#FFFFFF',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  featureText: {
-    fontSize: 13,
-    color: '#8E9AAF',
-    lineHeight: 18,
   },
   // Error
   errorText: {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, TouchableOpacity, Text, Modal, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Text, Modal, StyleSheet, Alert } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,15 +13,34 @@ export default function ProfileMenuButton() {
 
   const handleLogout = async () => {
     try {
+      // Check for pending transactions first
+      const queueJson = await NFCModule.getTransactionQueue();
+      const queue = JSON.parse(queueJson || '[]');
+      
+      if (queue.length > 0) {
+        Alert.alert(
+          'Cannot Logout',
+          `You have ${queue.length} unsynced transaction(s). Please connect to the internet to sync before logging out.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Try Sync Now', 
+              onPress: async () => {
+                await NFCModule.triggerOfflineSync();
+                Alert.alert('Sync Started', 'Please wait for sync to complete, then try logout again.');
+              }
+            }
+          ]
+        );
+        return;
+      }
+
+      // No pending transactions - proceed with logout
       console.log('[Logout] Starting logout...');
       
-      // 1. Clear AsyncStorage
       await AsyncStorage.removeItem('user');
-      
-      // 3. Clear all native SharedPreferences
       await NFCModule.clearAllSessionData();
       
-      // 4. Navigate to Welcome
       navigation.reset({
         index: 0,
         routes: [{ name: 'Welcome' as never }],

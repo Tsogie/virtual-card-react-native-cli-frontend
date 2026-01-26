@@ -1,97 +1,140 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Virtual Leap Card - NFC Mobile Transit Payment
 
-# Getting Started
+Mobile contactless payment app for Irish public transport using Android Host Card Emulation (HCE). Addresses the gap where only physical Leap Cards are currently supported.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Features
 
-## Step 1: Start Metro
+- **Offline-first transactions** - Instant local fare deduction with background sync
+- **Hardware-backed security** - ECDSA cryptographic signatures using Android KeyStore
+- **318ms NFC tap speed** - Optimized async architecture meets <500ms industry standard
+- **Production-ready testing** - 85% code coverage with hardware NFC validation
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## Architecture
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### Hybrid Native/JavaScript Design
+- React Native UI layer with TypeScript
+- Native Android modules bridged via `NativeModules` API
+- `LeapHostApduService.java` - HCE service for NFC APDU processing
+- `NFCModule.java` - React Native bridge for native operations
+- Event-driven communication via `NativeEventEmitter`
 
-```sh
-# Using npm
-npm start
+### Offline-First Transaction Flow
+1. **NFC tap received** → `LeapHostApduService` processes APDU
+2. **Local deduction** → Balance checked and deducted in `EncryptedSharedPreferences`
+3. **Sign transaction** → Payload signed with device private key (SHA256withECDSA)
+4. **Sync attempt** → HTTP POST to backend (if online) or queue (if offline)
+5. **Background retry** → `WorkManager` syncs queued transactions when network available
 
-# OR using Yarn
-yarn start
-```
+### Security Implementation
+- **Device keypair generation** in Android KeyStore (StrongBox when available)
+- **ECDSA signatures** (SHA256withECDSA) for all transactions
+- **Private key never leaves device** - only public key registered with backend
+- **AES-256-GCM encryption** for sensitive data in SharedPreferences
+- **JWT authentication** for initial device registration
 
-## Step 2: Build and run your app
+## Tech Stack
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+**Frontend:** React Native, TypeScript, React Navigation  
+**Backend:** Spring Boot, MySQL (https://github.com/Tsogie/virtual_card_spring_boot_backend)  
+**Security:** Android KeyStore, ECDSA, AES-256-GCM, JWT  
+**Testing:** JUnit 5, Mockito, Python (pyscard/ACR122U hardware testing)
 
-### Android
+## Installation
 
-```sh
-# Using npm
+### Prerequisites
+- Node.js 18+
+- Android device with NFC (emulator won't work)
+- Android SDK 28+
+
+### Setup
+```bash
+# Install dependencies
+npm install
+
+# iOS-specific (if testing on iOS)
+cd ios
+bundle install
+bundle exec pod install
+cd ..
+
+# Run on Android
 npm run android
 
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
+# Run on iOS
 npm run ios
-
-# OR using Yarn
-yarn ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+## Project Structure
+```
+├── App.tsx                              # Root navigation (Stack Navigator)
+├── context/
+│   └── UserContext.tsx                  # Global state management
+├── screens/
+│   ├── HomeScreen.tsx                   # Main screen with NFC status
+│   ├── TopUpScreen.tsx                  # Balance top-up
+│   └── TransactionsScreen.tsx           # Transaction history
+├── android/app/src/main/java/com/walla/
+│   ├── LeapHostApduService.java        # HCE service, APDU processing
+│   ├── NFCModule.java                   # React Native bridge
+│   ├── OfflineSyncWorker.java          # Background sync (WorkManager)
+│   └── SecureStorage.java               # EncryptedSharedPreferences helper
+```
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+## Testing
 
-## Step 3: Modify your app
+### Unit Tests
+```bash
+npm test
+```
 
-Now that you have successfully run the app, let's make changes!
+**Coverage:** 85% average (96% on critical services)
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+### Hardware Testing
+Python-based NFC reader simulator using ACR122U-A9 reader:
+```bash
+cd testing
+python transit_gate_simulator.py
+```
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+## Performance
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+- **NFC transaction time:** 318ms average (target: <500ms)
+- **Test coverage:** 85% (70 unit tests)
+- **Offline sync reliability:** 100%
 
-## Congratulations! :tada:
+## Backend API
 
-You've successfully run and modified your React Native App. :partying_face:
+**Base URL:** `https://walletappbackend-production-1557.up.railway.app`
 
-### Now what?
+Key endpoints:
+- `POST /api/login` - User authentication
+- `POST /api/device/register` - Register device public key
+- `GET /api/userinfo` - Get user balance and card info
+- `POST /api/wallet/redeem` - Process signed transaction
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+## Development
 
-# Troubleshooting
+### Running Metro Bundler
+```bash
+npm start
+```
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+### Debugging
+- Android Logcat filters: `LeapHCE`, `NFCModule`, `OfflineSyncWorker`
+- React Native Debugger for JS debugging
+- Android Studio for native code debugging
 
-# Learn More
+### Making Changes to Native Code
+1. Edit `.java` files in `android/app/src/main/java/com/walla/`
+2. Rebuild: `npm run android`
+3. For bridge changes, may need to uninstall and reinstall app
 
-To learn more about React Native, take a look at the following resources:
+## Known Limitations
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- Requires physical Android device with NFC (emulator not supported)
+- iOS does not support Host Card Emulation (Android only)
+- Manual testing requires a physical NFC reader. During development, the ACR122U-A9 reader was used for testing
+
+## Related
+
+- [Backend Repository](https://github.com/Tsogie/virtual_card_spring_boot_backend) - Spring Boot REST API

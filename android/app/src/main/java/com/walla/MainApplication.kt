@@ -16,7 +16,7 @@ class MainApplication : Application(), ReactApplication {
         getDefaultReactHost(
             context = applicationContext,
             packageList = PackageList(this).packages.apply {
-                // Manually add your native module
+                // Manually add native module
                 add(NFCModulePackage())
             },
         )
@@ -25,13 +25,7 @@ class MainApplication : Application(), ReactApplication {
     override fun onCreate() {
         super.onCreate()
 
-        // ✅ Initialize WorkManager (important for offline sync)
-        //val config = Configuration.Builder()
-          //  .setMinimumLoggingLevel(android.util.Log.INFO)
-            //.build()
-        //WorkManager.initialize(this, config)
-
-        // ✅ Load React Native runtime
+        // Load React Native runtime
         loadReactNative(this)
     }
 }

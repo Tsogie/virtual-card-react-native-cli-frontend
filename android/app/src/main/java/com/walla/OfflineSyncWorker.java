@@ -24,6 +24,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import android.util.Base64;
+import com.walla.LeapHostApduService;
 
 import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKey;
@@ -36,32 +37,12 @@ public class OfflineSyncWorker extends Worker {
         Log.i(TAG, "[INIT] OfflineSyncWorker created");
     }
 
-    private SharedPreferences getEncryptedPrefs(Context context) {
-        try {
-            MasterKey masterKey = new MasterKey.Builder(context)
-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                    .build();
-
-            return EncryptedSharedPreferences.create(
-                    context,
-                    "AppPrefsEncrypted",
-                    masterKey,
-                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            );
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to create EncryptedSharedPreferences", e);
-            return context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
-        }
-    }
-
 @NonNull
 @Override
 public Result doWork() {
     Log.i(TAG, "[START] =========== OFFLINE SYNC STARTING ===========");
 
-    SharedPreferences prefs = getEncryptedPrefs(getApplicationContext());
-    //SharedPreferences prefs = getApplicationContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
+    SharedPreferences prefs = SecureStorage.getEncryptedPrefs(getApplicationContext());
     String queueJson = prefs.getString("tx_queue", "[]");
     String deviceId = prefs.getString("device_id", null);
 
@@ -127,13 +108,13 @@ public Result doWork() {
               failedTxs.length() + " failed");
         Log.i(TAG, "[LOG] Updated queue: " + newQueueJson);
 
-        // SIMPLE: Let WorkManager handle retries automatically
+        // WorkManager handle retries automatically
         if (failedTxs.length() == 0) {
             Log.i(TAG, "[END] =========== OFFLINE SYNC FINISHED (all successful) ===========");
             return Result.success();
         } else {
             Log.w(TAG, "[END] =========== OFFLINE SYNC FINISHED (with failures) ===========");
-            return Result.retry(); // WorkManager will retry with exponential backoff
+            return Result.retry(); 
         }
 
     } catch (Exception e) {
@@ -154,6 +135,8 @@ public Result doWork() {
             requestBody.put("deviceId", deviceId);
             requestBody.put("payload", Base64.encodeToString(
                 tx.payload.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
+
+            //requestBody.put("payload", tx.payload);
             requestBody.put("signature", tx.signature);
 
             Log.i(TAG, "[HTTP] Request body: " + requestBody.toString());
@@ -192,6 +175,8 @@ public Result doWork() {
                         JSONObject result = new JSONObject(responseBody);
                         double newBalance = result.getDouble("newBalance");
                         
+                        LeapHostApduService.updateBalanceCache(newBalance);
+                        // Override local balance by backend new balance
                         prefs.edit().putLong("local_balance", 
                             Double.doubleToRawLongBits(newBalance)).apply();
                         

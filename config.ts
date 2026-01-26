@@ -11,7 +11,8 @@ export const Config = {
    * - Development: Use your local network IP (e.g., 'http://192.168.1.100:3000')
    * - Production: Use your production API URL
    */
-  BASE_URL: 'http://172.20.10.13:3000',
+  //BASE_URL: 'http://172.20.10.13:3000',
+  BASE_URL: 'https://walletappbackend-production-1557.up.railway.app',
 
   /**
    * API Endpoints
@@ -22,7 +23,7 @@ export const Config = {
     USER_REGISTER: '/api/register',
     USER_INFO: '/api/userinfo',
     WALLET_REDEEM: '/api/wallet/redeem',
-    TOPUP: '/api/wallet/topup/',
+    TOPUP: '/api/wallet/topup',
     TRANSACTIONS: '/api/transactions',
   },
 

@@ -21,46 +21,73 @@ export default function ProfileScreen() {
   const navigation = useNavigation();
 
   const handleLogout = async () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('[Logout] Starting logout...');
-              
-              // 1. Clear AsyncStorage (React Native persistence)
-              await AsyncStorage.removeItem('user');
-              console.log('[Logout] AsyncStorage cleared');
+    try {
+      // Check for pending transactions when log out
+      const queueJson = await NFCModule.getTransactionQueue();
+      const queue = JSON.parse(queueJson || '[]');
       
-              // 3. Clear ALL native SharedPreferences
-              await NFCModule.clearAllSessionData();
-              console.log('[Logout] Native SharedPreferences cleared');
-              
-              // 4. Navigate to Welcome
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Welcome' as never }],
-              });
-              
-              console.log('[Logout] Complete');
-            } catch (error) {
-              console.error('[Logout] Failed:', error);
-              Alert.alert('Error', 'Failed to logout');
+      // If we have transactions in queue, call method on NFCModule
+      if (queue.length > 0) {
+        Alert.alert(
+          'Cannot Logout',
+          `You have ${queue.length} unsynced transaction(s). Please connect to the internet to sync before logging out.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Try Sync Now', 
+              onPress: async () => {
+                await NFCModule.triggerOfflineSync();
+                Alert.alert('Sync Started', 'Please wait for sync to complete, then try logout again.');
+              }
             }
+          ]
+        );
+        return;
+      }
+
+      // No pending transactions - show confirmation
+      Alert.alert(
+        'Logout',
+        'Are you sure you want to logout?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
           },
-        },
-      ]
-    );
+          {
+            text: 'Logout',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                console.log('[Logout] Starting logout...');
+                
+                await AsyncStorage.removeItem('user');
+                console.log('[Logout] AsyncStorage cleared');
+        
+                await NFCModule.clearAllSessionData();
+                console.log('[Logout] Native SharedPreferences cleared');
+                
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Welcome' as never }],
+                });
+                
+                console.log('[Logout] Complete');
+              } catch (error) {
+                console.error('[Logout] Failed:', error);
+                Alert.alert('Error', 'Failed to logout');
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('[Logout] Error checking queue:', error);
+      Alert.alert('Error', 'Failed to check pending transactions');
+    }
   };
 
+  // Diplay log in prompt when session expires
   if (!user) {
     return (
       <View style={styles.loadingContainer}>
@@ -185,7 +212,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         {/* App Version */}
-        <Text style={styles.versionText}>Leap Card Wallet v1.0.0</Text>
+        <Text style={styles.versionText}>Virtual Leap Card v1.0.0</Text>
 
         <View style={{ height: 40 }} />
       </ScrollView>

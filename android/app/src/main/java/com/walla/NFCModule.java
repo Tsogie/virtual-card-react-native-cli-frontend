@@ -25,7 +25,6 @@ import java.security.KeyFactory;
 import java.security.spec.ECGenParameterSpec;
 import java.security.KeyStore.PrivateKeyEntry;
 
-
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.WorkManager;
 import androidx.work.Constraints;
@@ -33,6 +32,7 @@ import androidx.work.NetworkType;
 import androidx.work.ExistingWorkPolicy;
 import androidx.work.BackoffPolicy;
 import java.util.concurrent.TimeUnit;
+import com.walla.SecureStorage;
 
 import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKey;
@@ -46,25 +46,9 @@ public class NFCModule extends ReactContextBaseJavaModule {
 
 
     public NFCModule(ReactApplicationContext context) {
-    super(context);
-    reactContext = context; // assign static reference here
-        try {
-            MasterKey masterKey = new MasterKey.Builder(context)
-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                    .build();
-
-            prefs = EncryptedSharedPreferences.create(
-                    context,
-                    "AppPrefsEncrypted",
-                    masterKey,
-                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            );
-        } catch (Exception e) {
-            // Fallback to regular SharedPreferences if encryption fails
-            Log.e(MODULE_NAME, "Failed to create EncryptedSharedPreferences", e);
-            prefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
-        }
+        super(context);
+        reactContext = context; 
+        prefs = SecureStorage.getEncryptedPrefs(context);
     }
 
     public static void sendEventToJS(String type, String message) {
@@ -77,25 +61,7 @@ public class NFCModule extends ReactContextBaseJavaModule {
         }
     }
 
-    @ReactMethod
-    public void manualSyncTest(Promise promise) {
-        try {
-            // Trigger immediate sync without network constraint for testing
-            OneTimeWorkRequest workRequest = new OneTimeWorkRequest.Builder(OfflineSyncWorker.class)
-                    .addTag("offline-sync")
-                    .build();
-
-            WorkManager.getInstance(reactContext)
-                    .enqueueUniqueWork("offline-sync", ExistingWorkPolicy.REPLACE, workRequest);
-
-            Log.i("NFCModule", "[TEST] Manual sync triggered immediately");
-            promise.resolve("Sync triggered");
-        } catch (Exception e) {
-            Log.e("NFCModule", "[ERROR] Manual sync failed", e);
-            promise.reject("SYNC_ERROR", e);
-        }
-    }
-
+    // Sync with the server before user logs out
     @ReactMethod
     public void triggerOfflineSync(Promise promise) {
         try {
@@ -132,6 +98,16 @@ public class NFCModule extends ReactContextBaseJavaModule {
         }
     }
 
+    @ReactMethod
+    public void getTransactionQueue(Promise promise) {
+        try {
+            String queueJson = prefs.getString("tx_queue", "[]");
+            promise.resolve(queueJson);
+        } catch (Exception e) {
+            promise.reject("GET_QUEUE_FAILED", e);
+        }
+    }
+    
     @Override
     public String getName() {
         return MODULE_NAME;
@@ -162,15 +138,15 @@ public class NFCModule extends ReactContextBaseJavaModule {
         }
     }
 
-    @ReactMethod
-    public void clearJwtToken(Promise promise) {
-        try {
-            prefs.edit().remove("jwt_token").apply();
-            promise.resolve(true);
-        } catch (Exception e) {
-            promise.reject("CLEAR_FAILED", e);
-        }
-    }
+    // @ReactMethod
+    // public void clearJwtToken(Promise promise) {
+    //     try {
+    //         prefs.edit().remove("jwt_token").apply();
+    //         promise.resolve(true);
+    //     } catch (Exception e) {
+    //         promise.reject("CLEAR_FAILED", e);
+    //     }
+    // }
 
     @ReactMethod
     public void clearAllSessionData(Promise promise) {
@@ -185,6 +161,9 @@ public class NFCModule extends ReactContextBaseJavaModule {
             editor.remove("tx_queue");
             editor.apply();
             
+            SecureStorage.clearCache();
+            LeapHostApduService.clearCache();
+
             Log.i(MODULE_NAME, "[LOGOUT] All session data cleared from SharedPreferences");
             promise.resolve(true);
         } catch (Exception e) {
@@ -209,30 +188,31 @@ public class NFCModule extends ReactContextBaseJavaModule {
         }
     }
 
-    @ReactMethod
-    public void clearQueue(Promise promise) {
-        try {
-            prefs.edit().remove("tx_queue").apply();
-            promise.resolve(true);
-        } catch (Exception e) {
-            promise.reject("CLEAR_Queue_FAILED", e);
-        }
-    }
-
-    //Add method to clear local balance??
-    
-    //Save balance to sharedRef
+    //Save balance to sharedRef and cache
     @ReactMethod
     public void saveLocalBalance(double balance, Promise promise) {
         try {
             // Store as long bits
             prefs.edit().putLong("local_balance", Double.doubleToRawLongBits(balance)).apply();
+            LeapHostApduService.updateBalanceCache(balance);
             promise.resolve(true);
         } catch (Exception e) {
             promise.reject("SAVE_BALANCE_FAILED", e);
         }
     }
 
+    @ReactMethod
+    public void getLocalBalance(Promise promise) {
+        try {
+            long bits = prefs.getLong("local_balance", Double.doubleToRawLongBits(0.0));
+            double balance = Double.longBitsToDouble(bits);
+            promise.resolve(balance);
+        } catch (Exception e) {
+            promise.reject("GET_BALANCE_FAILED", e);
+        }
+    }
+
+    // Generate key pair
     @ReactMethod
     public void generateKeyPair(String alias, Promise promise) {
         try {
@@ -265,27 +245,15 @@ public class NFCModule extends ReactContextBaseJavaModule {
             .setIsStrongBoxBacked(true)
             .build(); 
             keyPairGenerator.initialize(spec); 
-            keyPair = keyPairGenerator.generateKeyPair(); }
-        // --- Now check if private key is hardware-backed
+            keyPair = keyPairGenerator.generateKeyPair();
+            }
+        // --- Check if private key is hardware-backed
         KeyFactory keyFactory = KeyFactory.getInstance(keyPair.getPrivate().getAlgorithm(), "AndroidKeyStore"); 
         KeyInfo keyInfo = keyFactory.getKeySpec(keyPair.getPrivate(), KeyInfo.class); 
+        
         Log.i("KeyCheck", "Hardware backed: " + keyInfo.isInsideSecureHardware()); 
         return keyPair;
-
     }
-
-
-   @ReactMethod
-    public void getLocalBalance(Promise promise) {
-        try {
-            long bits = prefs.getLong("local_balance", Double.doubleToRawLongBits(0.0));
-            double balance = Double.longBitsToDouble(bits);
-            promise.resolve(balance);
-        } catch (Exception e) {
-            promise.reject("GET_BALANCE_FAILED", e);
-        }
-    }
-
 
     @ReactMethod
     public void saveKeyAlias(String alias, Promise promise){
@@ -317,16 +285,13 @@ public class NFCModule extends ReactContextBaseJavaModule {
         }
     }
 
-
    @ReactMethod
     public void addListener(String eventName) {
-        // Required for RN built-in EventEmitter.
-        // No implementation needed — RN calls this when JS adds a listener.
+        
     }
 
     @ReactMethod
     public void removeListeners(Integer count) {
-        // Required for RN built-in EventEmitter.
-        // No implementation needed — RN calls this when JS removes listeners.
+       
     }
 }

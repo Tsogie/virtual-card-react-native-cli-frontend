@@ -14,12 +14,12 @@ import { useNavigation } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 
 export default function HomeScreen() {
+
   const { user, refreshBalance, isLoadingBalance, fetchUserInfo, lastTransaction, transactionStatus } = useUser();
   const [initialLoading, setInitialLoading] = useState(true);
   const navigation = useNavigation();
-  
-  // Pulse animation for "Ready to Tap"
-  const pulseAnim = new Animated.Value(1);
+
+  const pulseAnim = React.useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const loadUserIfNeeded = async () => {
@@ -32,11 +32,10 @@ export default function HomeScreen() {
       }
       setInitialLoading(false);
     };
-
     loadUserIfNeeded();
   }, []);
 
-  // Pulse animation
+  // Pulse animation change when transaction status change/ useUser
   useEffect(() => {
     if (transactionStatus === 'idle') {
       Animated.loop(
@@ -169,7 +168,7 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            {/* Ready to Tap Section - PROMINENT */}
+            {/* Ready to Tap Section */}
             <Animated.View 
               style={[
                 styles.readyToTapSection,
@@ -195,7 +194,7 @@ export default function HomeScreen() {
         {/* Divider */}
         <View style={styles.divider} />
 
-        {/* Quick Actions - 2 Only */}
+        {/* Quick Actions */}
         <View style={styles.actionsContainer}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionsGrid}>
@@ -219,17 +218,6 @@ export default function HomeScreen() {
               <Text style={styles.actionText}>Transactions</Text>
             </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Security Badge */}
-        <View style={styles.securityCard}>
-          <View style={styles.securityHeader}>
-            <Text style={styles.securityIcon}>🔒</Text>
-            <Text style={styles.securityTitle}>Hardware-backed Security</Text>
-          </View>
-          <Text style={styles.securityText}>
-            Payments protected with cryptographic keys stored in secure hardware
-          </Text>
         </View>
 
         {/* Bottom Spacing */}
@@ -464,35 +452,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FFFFFF',
     fontWeight: '600',
-  },
-
-  // Security Card
-  securityCard: {
-    marginHorizontal: 24,
-    backgroundColor: '#1A1F2E',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#2A2F3E',
-  },
-  securityHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  securityIcon: {
-    fontSize: 18,
-    marginRight: 8,
-  },
-  securityTitle: {
-    fontSize: 15,
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  securityText: {
-    fontSize: 13,
-    color: '#8E9AAF',
-    lineHeight: 20,
   },
   //Log in button
   loginButton: {

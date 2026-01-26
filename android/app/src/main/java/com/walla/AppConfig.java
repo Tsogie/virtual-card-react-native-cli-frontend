@@ -13,8 +13,10 @@ public class AppConfig {
     private static final String PREFS_NAME = "AppPrefs";
     private static final String KEY_BASE_URL = "base_url";
 
-    // Fallback URL if not set in SharedPreferences
-    private static final String DEFAULT_BASE_URL = "http://172.20.10.13:3000";
+    // fallback URL if not set in SharedPreferences
+    // local url
+    // private static final String DEFAULT_BASE_URL = "http://172.20.10.13:3000";
+    private static final String DEFAULT_BASE_URL = "https://walletappbackend-production-1557.up.railway.app";
 
     /**
      * Get the backend base URL
@@ -39,18 +41,8 @@ public class AppConfig {
      * API Endpoint builders
      */
     public static class Endpoints {
-        public static String login(Context context) {
-            return getBaseUrl(context) + "/api/login";
-        }
 
-        public static String deviceRegister(Context context) {
-            return getBaseUrl(context) + "/api/device/register";
-        }
-
-        public static String userInfo(Context context) {
-            return getBaseUrl(context) + "/api/userinfo";
-        }
-
+        // Native code uses only /api/wallet/redeem API endpoint
         public static String walletRedeem(Context context) {
             return getBaseUrl(context) + "/api/wallet/redeem";
         }

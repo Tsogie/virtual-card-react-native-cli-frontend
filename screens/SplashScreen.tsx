@@ -10,7 +10,7 @@ export default function SplashScreen({ navigation }: any) {
   const { fetchUserInfo } = useUser();
 
   useEffect(() => {
-    // Small delay to ensure UserContext is ready
+    // delay to ensure UserContext is ready
     const timer = setTimeout(() => {
       checkAuthState();
     }, 100);
@@ -22,7 +22,7 @@ export default function SplashScreen({ navigation }: any) {
     try {
       console.log('[Splash] Checking auth state...');
       
-      // Check 1: Do we have cached user data?
+      // check cached user data in AsyncStorage 
       const userJson = await AsyncStorage.getItem('user');
       
       if (!userJson) {
@@ -31,7 +31,7 @@ export default function SplashScreen({ navigation }: any) {
         return;
       }
 
-      // Check 2: Is native session valid? (has JWT + deviceId)
+      // we have JWT and deviceId in encrypted storage
       const isValid = await NFCModule.isSessionValid();
       
       if (!isValid) {
@@ -41,13 +41,13 @@ export default function SplashScreen({ navigation }: any) {
         return;
       }
 
-      // Check 3: Can we refresh from backend? (validates token not expired)
+      // refresh from backend to ckeck token expiry
       try {
         await fetchUserInfo();
         console.log('[Splash] Session valid → Main');
         navigation.replace('Main');
       } catch (error) {
-        // Token expired or invalid (60 min lifetime)
+        // Token expired 
         console.log('[Splash] Token expired/invalid → Welcome');
         await AsyncStorage.removeItem('user');
         await NFCModule.clearAllSessionData();

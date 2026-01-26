@@ -49,12 +49,3 @@ export default function App() {
 }
 
 
-  //  <Stack.Screen
-  //         name="TopUp"
-  //         component={TopUpScreen}
-  //         options={{
-  //           headerShown: true,
-  //           title: 'Top Up',
-  //           headerTintColor: '#0a310cff',
-  //         }}
-  //       />
