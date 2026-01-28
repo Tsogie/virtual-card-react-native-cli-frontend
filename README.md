@@ -11,7 +11,9 @@ Mobile contactless payment app for Irish public transport using Android Host Car
 
 ## Download
 
-**[Download APK (Latest Release)](https://github.com/Tsogie/virtual_card_react_native_cli_frontend/releases/latest/download/app-release.apk)**
+**[Download APK (Latest Release)](https://github.com/Tsogie/virtual-card-react-native-cli-frontend/releases/latest/download/app-release.apk)**
+
+https://github.com/Tsogie/virtual-card-react-native-cli-frontend/releases/tag/v1.0.0
 
 **Requirements:**
 - Android 9+ with NFC
@@ -105,6 +107,7 @@ Python-based NFC reader simulator using ACR122U-A9 reader:
 cd testing
 python transit_gate_simulator.py
 ```
+See [testing/README.md](testing/README.md) for details.
 
 ## Performance
 
@@ -147,4 +150,4 @@ npm start
 
 ## Related
 
-- [Backend Repository](https://github.com/Tsogie/virtual_card_spring_boot_backend) - Spring Boot REST API
+- [Backend Repository](https://github.com/Tsogie/virtual-card-spring-boot-backend) - Spring Boot REST API
