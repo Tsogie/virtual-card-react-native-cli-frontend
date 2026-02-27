@@ -13,13 +13,12 @@ Mobile contactless payment app for Irish public transport using Android Host Car
 
 **[Download APK (Latest Release)](https://github.com/Tsogie/virtual-card-react-native-cli-frontend/releases/latest/download/app-release.apk)**
 
-https://github.com/Tsogie/virtual-card-react-native-cli-frontend/releases/tag/v1.0.0
 
 **Requirements:**
 - Android 9+ with NFC
 - Enable "Install from unknown sources" in Settings
 
-**Note:** Backend server required for full functionality (https://github.com/Tsogie/virtual_card_spring_boot_backend). 
+**Note:** Backend server required for full functionality. - [Backend Repository](https://github.com/Tsogie/virtual-card-spring-boot-backend) - Spring Boot REST API
 
 ## Architecture
 
@@ -47,7 +46,7 @@ https://github.com/Tsogie/virtual-card-react-native-cli-frontend/releases/tag/v1
 ## Tech Stack
 
 **Frontend:** React Native, TypeScript, React Navigation  
-**Backend:** Spring Boot, MySQL (https://github.com/Tsogie/virtual_card_spring_boot_backend)  
+**Backend:** Spring Boot, PostgreSQL  
 **Security:** Android KeyStore, ECDSA, AES-256-GCM, JWT  
 **Testing:** JUnit 5, Mockito, Python (pyscard/ACR122U hardware testing)
 
@@ -94,13 +93,6 @@ npm run ios
 
 ## Testing
 
-### Unit Tests
-```bash
-npm test
-```
-
-**Coverage:** 85% average (96% on critical services)
-
 ### Hardware Testing
 Python-based NFC reader simulator using ACR122U-A9 reader:
 ```bash
@@ -117,7 +109,7 @@ See [testing/README.md](testing/README.md) for details.
 
 ## Backend API
 
-**Base URL:** `https://walletappbackend-production-1557.up.railway.app`
+**Base URL:** `https://virtual-card-spring-boot-backend.onrender.com`
 
 Key endpoints:
 - `POST /api/login` - User authentication
