@@ -16,7 +16,7 @@ public class AppConfig {
     // fallback URL if not set in SharedPreferences
     // local url
     // private static final String DEFAULT_BASE_URL = "http://172.20.10.13:3000";
-    private static final String DEFAULT_BASE_URL = "https://walletappbackend-production-1557.up.railway.app";
+    private static final String DEFAULT_BASE_URL = " ";
 
     /**
      * Get the backend base URL
